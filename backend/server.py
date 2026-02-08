@@ -1,4 +1,5 @@
 from fastapi import FastAPI, APIRouter, UploadFile, File, HTTPException
+from fastapi.responses import Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -6,6 +7,9 @@ import os
 import logging
 import re
 import io
+import csv
+import uuid
+import time
 import base64
 import subprocess
 import tempfile
@@ -39,6 +43,32 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+# ── Temporary in-memory file store for reliable downloads ────
+_file_store: Dict[str, dict] = {}
+_FILE_TTL = 600  # 10 minutes
+
+
+def _store_file(data: bytes, filename: str, audit_log: list, stats: dict, total: int) -> str:
+    """Store file data and return a unique download ID."""
+    _cleanup_expired()
+    file_id = uuid.uuid4().hex
+    _file_store[file_id] = {
+        "data": data,
+        "filename": filename,
+        "audit_log": audit_log,
+        "stats": stats,
+        "total": total,
+        "created": time.time(),
+    }
+    return file_id
+
+
+def _cleanup_expired():
+    now = time.time()
+    expired = [k for k, v in _file_store.items() if now - v["created"] > _FILE_TTL]
+    for k in expired:
+        del _file_store[k]
 
 # ── Pre‑compile name & location patterns ────────────────────
 _all_names = sorted(INDIAN_FIRST_NAMES | INDIAN_SURNAMES, key=len, reverse=True)
@@ -210,13 +240,96 @@ async def redact_document(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Processing failed: {exc}")
 
     original_stem = (file.filename or "document").rsplit(".", 1)[0]
+    filename = f"redacted_{original_stem}.docx"
+
+    file_id = _store_file(redacted_bytes, filename, audit_log, stats, total)
+
     return {
         "stats": stats,
         "total": total,
-        "file_base64": base64.b64encode(redacted_bytes).decode("utf-8"),
-        "filename": f"redacted_{original_stem}.docx",
+        "file_id": file_id,
+        "filename": filename,
         "audit_log": audit_log,
     }
+
+
+@api_router.get("/download/{file_id}")
+async def download_redacted(file_id: str):
+    entry = _file_store.get(file_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="File expired or not found. Please re-process.")
+    return Response(
+        content=entry["data"],
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{entry["filename"]}"'},
+    )
+
+
+@api_router.get("/audit-csv/{file_id}")
+async def download_audit_csv(file_id: str):
+    entry = _file_store.get(file_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="File expired or not found. Please re-process.")
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["Category", "Placeholder", "Location"])
+    for row in entry["audit_log"]:
+        writer.writerow([row["category"], row["placeholder"], row["location"]])
+    writer.writerow([])
+    writer.writerow(["Summary"])
+    writer.writerow(["Category", "Count"])
+    for cat, count in sorted(entry["stats"].items(), key=lambda x: -x[1]):
+        writer.writerow([cat, count])
+    writer.writerow(["TOTAL", entry["total"]])
+
+    csv_bytes = buf.getvalue().encode("utf-8")
+    return Response(
+        content=csv_bytes,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="audit_{entry["filename"].replace(".docx", ".csv")}"'},
+    )
+
+
+@api_router.post("/audit-csv-batch")
+async def download_batch_audit_csv(file_ids: List[str] = []):
+    """Generate a single audit CSV combining multiple processed files."""
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["Document", "Category", "Placeholder", "Location"])
+
+    for fid in file_ids:
+        entry = _file_store.get(fid)
+        if not entry:
+            continue
+        for row in entry["audit_log"]:
+            writer.writerow([entry["filename"], row["category"], row["placeholder"], row["location"]])
+
+    writer.writerow([])
+    writer.writerow(["Summary"])
+    writer.writerow(["Document", "Total PII", "Status"])
+    for fid in file_ids:
+        entry = _file_store.get(fid)
+        if entry:
+            writer.writerow([entry["filename"], entry["total"], "Success"])
+        else:
+            writer.writerow([fid, 0, "Expired/Not Found"])
+
+    writer.writerow([])
+    writer.writerow(["Category Breakdown"])
+    writer.writerow(["Document", "Category", "Count"])
+    for fid in file_ids:
+        entry = _file_store.get(fid)
+        if entry:
+            for cat, count in sorted(entry["stats"].items(), key=lambda x: -x[1]):
+                writer.writerow([entry["filename"], cat, count])
+
+    csv_bytes = buf.getvalue().encode("utf-8")
+    return Response(
+        content=csv_bytes,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="pii_audit_report.csv"'},
+    )
 
 
 # ── App wiring ──────────────────────────────────────────────
