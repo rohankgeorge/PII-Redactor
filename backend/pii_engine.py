@@ -142,9 +142,12 @@ LOCATION_DICT_PATTERN = re.compile(
 
 # Consecutive capitalized words (2+ words, potential names)
 CONSEC_CAP_PATTERN = re.compile(
-    r"\b([A-Z][a-z']{1,20}(?:\s+[A-Z]\.)*"
-    r"(?:\s+[A-Z][a-z']{1,20}){1,5}"
-    r"(?:\s+[dDlL]\'?[A-Z][a-z']+)?)\b"
+    r"\b([A-Z][a-z]{1,20}(?:"
+    r"\s+[A-Z]'[A-Z][a-z]+"        # D'Rozario
+    r"|\s+[A-Z]\s+[A-Z][a-z]+"     # D Rozario
+    r"|\s+[A-Z][a-z]{1,20}"        # Regular name word
+    r"|\s+[A-Z]\."                  # Initial with dot
+    r"){1,5})\b"
 )
 
 # Stop words that look like capitalized phrases but aren't names
