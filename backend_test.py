@@ -128,37 +128,42 @@ class PiiRedactionAPITester:
             return False, {}
 
     def test_redact_doc_file(self):
-        """Test redaction with legacy .doc file - new feature"""
+        """Test redaction with legacy .doc file - returns file_id format"""
         try:
             file_path = Path("/tmp/test_legacy.doc")
             if not file_path.exists():
                 self.log_test("Redact DOC File (Legacy)", False, "Test file /tmp/test_legacy.doc not found")
-                return False
+                return False, {}
 
             with open(file_path, 'rb') as f:
                 files = {'file': (file_path.name, f, 'application/msword')}
                 response = requests.post(f"{self.base_url}/redact", files=files, timeout=60)
 
             success = response.status_code == 200
+            response_data = {}
             
             if success:
                 try:
-                    data = response.json()
-                    required_fields = ['stats', 'total', 'file_base64', 'filename', 'audit_log']
-                    missing_fields = [f for f in required_fields if f not in data]
+                    response_data = response.json()
+                    required_fields = ['stats', 'total', 'file_id', 'filename', 'audit_log']
+                    missing_fields = [f for f in required_fields if f not in response_data]
                     
                     if missing_fields:
                         success = False
                         details = f"Missing fields: {missing_fields}"
                     else:
-                        total_pii = data.get('total', 0)
-                        audit_count = len(data.get('audit_log', []))
-                        filename = data.get('filename', '')
-                        details = f"PII: {total_pii}, Audit entries: {audit_count}, Output: {filename}"
+                        total_pii = response_data.get('total', 0)
+                        audit_count = len(response_data.get('audit_log', []))
+                        filename = response_data.get('filename', '')
+                        file_id = response_data.get('file_id', '')
+                        details = f"PII: {total_pii}, Audit entries: {audit_count}, Output: {filename}, File ID: {file_id}"
                         
-                        # Verify converted to .docx
+                        # Verify converted to .docx and valid file_id
                         if not filename.endswith('.docx'):
                             details += " | Should convert to .docx format"
+                        if not file_id or len(file_id) != 32:
+                            details += " | Invalid file_id format"
+                            success = False
                             
                 except json.JSONDecodeError:
                     details = "Invalid JSON response"
@@ -166,12 +171,12 @@ class PiiRedactionAPITester:
             else:
                 details = f"Status: {response.status_code}, Error: {response.text[:200]}"
 
-            self.log_test("Redact DOC File (Legacy)", success, details)
-            return success
+            self.log_test("Redact DOC File (Legacy)", success, details, response_data if success else None)
+            return success, response_data
             
         except Exception as e:
             self.log_test("Redact DOC File (Legacy)", False, f"Error: {str(e)}")
-            return False
+            return False, {}
 
     def test_batch_processing_simulation(self):
         """Simulate batch processing by sending multiple files"""
