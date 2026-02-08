@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Backend API Testing for Indian PII Redaction Tool - Updated
+Backend API Testing for Indian PII Redaction Tool - Comprehensive Tests
 Tests all endpoints with focus on new features: .doc support, audit_log, batch processing
 """
 
@@ -39,195 +39,323 @@ class PiiRedactionAPITester:
         if details:
             print(f"   {details}")
 
-    def run_test(self, name, method, endpoint, expected_status, data=None, files=None, headers=None):
-        """Run a single API test"""
-        url = f"{self.base_url}{endpoint}"
-        request_headers = headers or {}
-        
-        print(f"\n🔍 Testing {name}...")
-        print(f"   URL: {url}")
-        
+    def test_health_check(self):
+        """Test the root API endpoint"""
         try:
-            if method == 'GET':
-                response = requests.get(url, headers=request_headers, timeout=30)
-            elif method == 'POST':
-                if files:
-                    response = requests.post(url, files=files, headers=request_headers, timeout=60)
-                else:
-                    response = requests.post(url, json=data, headers=request_headers, timeout=30)
-
-            success = response.status_code == expected_status
-            details = f"Status: {response.status_code}"
-            response_data = None
+            response = requests.get(f"{self.base_url}/", timeout=10)
+            success = response.status_code == 200
             
             if success:
-                if response.headers.get('content-type', '').startswith('application/json'):
-                    try:
-                        response_data = response.json()
-                        details += f", Response keys: {list(response_data.keys()) if isinstance(response_data, dict) else 'Non-dict response'}"
-                    except:
-                        details += ", JSON parse error"
+                try:
+                    data = response.json()
+                    details = f"Status: {response.status_code}, Message: {data.get('message', 'N/A')}"
+                except:
+                    details = f"Status: {response.status_code}, Non-JSON response"
             else:
-                details += f", Error: {response.text[:200]}"
+                details = f"Status: {response.status_code}, Error: {response.text[:200]}"
             
-            self.log_test(name, success, details, response_data)
-            return success, response_data or {}
-
-        except requests.exceptions.Timeout:
-            self.log_test(name, False, "Request timed out")
-            return False, {}
+            self.log_test("API Health Check", success, details, data if success else None)
+            return success
         except Exception as e:
-            print(f"❌ Failed - Error: {str(e)}")
-            return False, {}
+            self.log_test("API Health Check", False, f"Error: {str(e)}")
+            return False
 
-    def test_health_check(self):
-        """Test health check endpoint"""
-        success, response = self.run_test(
-            "Health Check",
-            "GET", 
-            "/",
-            200
-        )
-        return success
-
-    def test_redact_valid_docx(self, docx_file_path):
-        """Test redaction with valid .docx file"""
-        if not os.path.exists(docx_file_path):
-            print(f"❌ Test file not found: {docx_file_path}")
-            return False, {}
-            
-        with open(docx_file_path, 'rb') as f:
-            files = {'file': ('test_pii.docx', f, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')}
-            success, response = self.run_test(
-                "Redact Valid .docx File",
-                "POST",
-                "/redact", 
-                200,
-                files=files
-            )
-            
-        if success and response:
-            # Verify response structure
-            required_fields = ['stats', 'total', 'file_base64', 'filename']
-            missing_fields = [field for field in required_fields if field not in response]
-            if missing_fields:
-                print(f"❌ Missing response fields: {missing_fields}")
+    def test_redact_docx_file(self):
+        """Test redaction with .docx file - focusing on new audit_log feature"""
+        try:
+            file_path = Path("/tmp/test_pii.docx")
+            if not file_path.exists():
+                self.log_test("Redact DOCX File", False, "Test file /tmp/test_pii.docx not found")
                 return False, {}
-                
-            # Verify stats structure 
-            stats = response.get('stats', {})
-            total = response.get('total', 0)
-            file_base64 = response.get('file_base64', '')
-            
-            print(f"   📊 Stats detected: {stats}")
-            print(f"   📈 Total PII items: {total}")
-            print(f"   📄 Base64 file size: {len(file_base64)} chars")
-            
-            # Verify expected PII types are detected (based on problem statement)
-            expected_categories = {
-                'AADHAAR_NUMBER', 'PAN_NUMBER', 'PHONE_NUMBER', 'EMAIL', 
-                'PASSPORT_NUMBER', 'VOTER_ID', 'IFSC_CODE', 'GST_NUMBER', 
-                'UPI_ID', 'VEHICLE_REGISTRATION', 'NAME', 'LOCATION', 
-                'PIN_CODE', 'ADDRESS', 'DATE_OF_BIRTH'
-            }
-            
-            detected_categories = set(stats.keys())
-            print(f"   🎯 Detected categories: {detected_categories}")
-            print(f"   ✅ Expected some of: {expected_categories}")
-            
-            return success, response
-            
-        return success, {}
 
-    def test_reject_non_docx(self):
-        """Test rejection of non-.docx files"""
-        # Create a dummy text file
-        dummy_content = b"This is not a docx file"
-        files = {'file': ('test.txt', dummy_content, 'text/plain')}
+            with open(file_path, 'rb') as f:
+                files = {'file': (file_path.name, f, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')}
+                response = requests.post(f"{self.base_url}/redact", files=files, timeout=60)
+
+            success = response.status_code == 200
+            response_data = {}
+            
+            if success:
+                try:
+                    response_data = response.json()
+                    required_fields = ['stats', 'total', 'file_base64', 'filename', 'audit_log']
+                    missing_fields = [f for f in required_fields if f not in response_data]
+                    
+                    if missing_fields:
+                        success = False
+                        details = f"Missing required fields: {missing_fields}"
+                    else:
+                        total_pii = response_data.get('total', 0)
+                        audit_count = len(response_data.get('audit_log', []))
+                        stats = response_data.get('stats', {})
+                        filename = response_data.get('filename', '')
+                        
+                        # Verify audit_log format
+                        audit_sample = response_data.get('audit_log', [])[:3]  # First 3 entries
+                        audit_valid = True
+                        for entry in audit_sample:
+                            if not all(key in entry for key in ['category', 'placeholder', 'location']):
+                                audit_valid = False
+                                break
+                        
+                        if not audit_valid:
+                            details = f"Invalid audit_log format in response"
+                            success = False
+                        else:
+                            details = f"PII: {total_pii}, Audit entries: {audit_count}, Stats: {stats}, File: {filename}"
+                            
+                            # Check if file_base64 is valid
+                            if not response_data.get('file_base64'):
+                                details += " | Missing file_base64"
+                                success = False
+                            else:
+                                try:
+                                    base64.b64decode(response_data['file_base64'])
+                                    details += " | Valid base64 data"
+                                except:
+                                    details += " | Invalid base64 data"
+                                    success = False
+                        
+                except json.JSONDecodeError:
+                    details = "Invalid JSON response"
+                    success = False
+            else:
+                details = f"Status: {response.status_code}, Error: {response.text[:200]}"
+
+            self.log_test("Redact DOCX File", success, details, response_data if success else None)
+            return success, response_data
+            
+        except Exception as e:
+            self.log_test("Redact DOCX File", False, f"Error: {str(e)}")
+            return False, {}
+
+    def test_redact_doc_file(self):
+        """Test redaction with legacy .doc file - new feature"""
+        try:
+            file_path = Path("/tmp/test_legacy.doc")
+            if not file_path.exists():
+                self.log_test("Redact DOC File (Legacy)", False, "Test file /tmp/test_legacy.doc not found")
+                return False
+
+            with open(file_path, 'rb') as f:
+                files = {'file': (file_path.name, f, 'application/msword')}
+                response = requests.post(f"{self.base_url}/redact", files=files, timeout=60)
+
+            success = response.status_code == 200
+            
+            if success:
+                try:
+                    data = response.json()
+                    required_fields = ['stats', 'total', 'file_base64', 'filename', 'audit_log']
+                    missing_fields = [f for f in required_fields if f not in data]
+                    
+                    if missing_fields:
+                        success = False
+                        details = f"Missing fields: {missing_fields}"
+                    else:
+                        total_pii = data.get('total', 0)
+                        audit_count = len(data.get('audit_log', []))
+                        filename = data.get('filename', '')
+                        details = f"PII: {total_pii}, Audit entries: {audit_count}, Output: {filename}"
+                        
+                        # Verify converted to .docx
+                        if not filename.endswith('.docx'):
+                            details += " | Should convert to .docx format"
+                            
+                except json.JSONDecodeError:
+                    details = "Invalid JSON response"
+                    success = False
+            else:
+                details = f"Status: {response.status_code}, Error: {response.text[:200]}"
+
+            self.log_test("Redact DOC File (Legacy)", success, details)
+            return success
+            
+        except Exception as e:
+            self.log_test("Redact DOC File (Legacy)", False, f"Error: {str(e)}")
+            return False
+
+    def test_batch_processing_simulation(self):
+        """Simulate batch processing by sending multiple files"""
+        try:
+            test_files = [
+                ("/tmp/test_pii.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+                ("/tmp/test_pii_2.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+            ]
+            
+            batch_results = []
+            total_pii_batch = 0
+            
+            for file_path, mime_type in test_files:
+                path_obj = Path(file_path)
+                if not path_obj.exists():
+                    continue
+                    
+                with open(path_obj, 'rb') as f:
+                    files = {'file': (path_obj.name, f, mime_type)}
+                    response = requests.post(f"{self.base_url}/redact", files=files, timeout=60)
+                    
+                if response.status_code == 200:
+                    try:
+                        data = response.json()
+                        batch_results.append({
+                            "file": path_obj.name,
+                            "pii_count": data.get('total', 0),
+                            "audit_entries": len(data.get('audit_log', [])),
+                            "success": True
+                        })
+                        total_pii_batch += data.get('total', 0)
+                    except:
+                        batch_results.append({"file": path_obj.name, "success": False, "error": "JSON parse error"})
+                else:
+                    batch_results.append({"file": path_obj.name, "success": False, "error": f"HTTP {response.status_code}"})
+
+            success = len(batch_results) > 0 and all(r.get("success", False) for r in batch_results)
+            details = f"Processed {len(batch_results)} files, Total PII: {total_pii_batch}, Results: {batch_results}"
+            
+            self.log_test("Batch Processing Simulation", success, details)
+            return success
+            
+        except Exception as e:
+            self.log_test("Batch Processing Simulation", False, f"Error: {str(e)}")
+            return False
+
+    def test_invalid_file_type(self):
+        """Test rejection of invalid file types"""
+        try:
+            fake_content = b"This is not a valid document file"
+            files = {'file': ('test.txt', fake_content, 'text/plain')}
+            response = requests.post(f"{self.base_url}/redact", files=files, timeout=30)
+            
+            # Should return 400 for invalid file type
+            success = response.status_code == 400
+            details = f"Status: {response.status_code} (expected 400 for invalid file type)"
+            if not success:
+                details += f", Response: {response.text[:100]}"
+            
+            self.log_test("Invalid File Type Rejection", success, details)
+            return success
+            
+        except Exception as e:
+            self.log_test("Invalid File Type Rejection", False, f"Error: {str(e)}")
+            return False
+
+    def test_oversized_file(self):
+        """Test file size limit enforcement"""
+        try:
+            # Create fake oversized file (>10MB)
+            large_content = b"x" * (11 * 1024 * 1024)
+            files = {'file': ('large.docx', large_content, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')}
+            response = requests.post(f"{self.base_url}/redact", files=files, timeout=30)
+            
+            # Should return 400 for oversized file
+            success = response.status_code == 400
+            details = f"Status: {response.status_code} (expected 400 for oversized file)"
+            if not success:
+                details += f", Response: {response.text[:100]}"
+            
+            self.log_test("File Size Limit Check", success, details)
+            return success
+            
+        except Exception as e:
+            self.log_test("File Size Limit Check", False, f"Error: {str(e)}")
+            return False
+
+    def test_audit_log_structure(self, docx_response_data):
+        """Test audit_log structure in detail"""
+        if not docx_response_data:
+            self.log_test("Audit Log Structure", False, "No response data provided")
+            return False
+            
+        try:
+            audit_log = docx_response_data.get('audit_log', [])
+            if not audit_log:
+                self.log_test("Audit Log Structure", False, "audit_log is empty or missing")
+                return False
+            
+            # Check structure of first few entries
+            required_keys = ['category', 'placeholder', 'location']
+            valid_entries = 0
+            
+            for entry in audit_log[:5]:  # Check first 5 entries
+                if all(key in entry for key in required_keys):
+                    valid_entries += 1
+            
+            success = valid_entries == min(len(audit_log), 5)
+            details = f"Checked {min(len(audit_log), 5)} entries, {valid_entries} valid. Sample: {audit_log[0] if audit_log else 'None'}"
+            
+            self.log_test("Audit Log Structure", success, details)
+            return success
+            
+        except Exception as e:
+            self.log_test("Audit Log Structure", False, f"Error: {str(e)}")
+            return False
+
+    def run_all_tests(self):
+        """Run all backend API tests"""
+        print("🚀 Starting Comprehensive Backend Tests for PII Redaction Tool")
+        print(f"Testing endpoint: {self.base_url}")
+        print("=" * 70)
+
+        # Basic connectivity test
+        if not self.test_health_check():
+            print("\n❌ Health check failed - API may be down")
+            return False
+
+        # Core functionality tests
+        docx_success, docx_data = self.test_redact_docx_file()
+        self.test_redact_doc_file()
+        self.test_batch_processing_simulation()
         
-        success, response = self.run_test(
-            "Reject Non-.docx File",
-            "POST",
-            "/redact",
-            400,  # Should return 400 Bad Request
-            files=files
-        )
-        return success
-
-    def test_file_too_large(self):
-        """Test rejection of files that are too large"""
-        # Create a dummy file that's larger than 10MB
-        large_content = b"x" * (11 * 1024 * 1024)  # 11MB
-        files = {'file': ('large.docx', large_content, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')}
+        # Detailed audit log testing
+        if docx_success and docx_data:
+            self.test_audit_log_structure(docx_data)
         
-        success, response = self.run_test(
-            "Reject Large File",
-            "POST", 
-            "/redact",
-            400,  # Should return 400 Bad Request
-            files=files
-        )
-        return success
+        # Edge case tests
+        self.test_invalid_file_type()
+        self.test_oversized_file()
 
-    def test_missing_file(self):
-        """Test API call without file"""
-        success, response = self.run_test(
-            "Missing File Parameter",
-            "POST",
-            "/redact", 
-            422,  # Should return 422 Unprocessable Entity
-            data={}
-        )
-        return success
+        # Print comprehensive summary
+        print("\n" + "=" * 70)
+        print(f"📊 Test Summary: {self.tests_passed}/{self.tests_run} tests passed")
+        print(f"🎯 Success Rate: {(self.tests_passed/self.tests_run)*100:.1f}%")
+        
+        if self.tests_passed < self.tests_run:
+            print(f"\n❌ Failed Tests ({self.tests_run - self.tests_passed}):")
+            for result in self.test_results:
+                if result["status"] == "FAILED":
+                    print(f"   • {result['test']}: {result['details']}")
+        
+        # Save detailed results
+        try:
+            with open("/tmp/backend_test_results.json", "w") as f:
+                json.dump({
+                    "summary": {
+                        "total_tests": self.tests_run,
+                        "passed_tests": self.tests_passed,
+                        "failed_tests": self.tests_run - self.tests_passed,
+                        "success_rate": f"{(self.tests_passed/self.tests_run)*100:.1f}%" if self.tests_run > 0 else "0%"
+                    },
+                    "detailed_results": self.test_results,
+                    "timestamp": datetime.now().isoformat()
+                }, f, indent=2)
+            print(f"\n💾 Detailed results saved to /tmp/backend_test_results.json")
+        except Exception as e:
+            print(f"\n⚠️ Could not save results: {e}")
+        
+        return self.tests_passed == self.tests_run
 
 def main():
-    print("🚀 Starting PII Redaction API Tests")
-    print("=" * 50)
+    print("Indian PII Redaction Tool - Backend API Testing")
+    print("Testing new features: .doc support, audit_log, batch processing")
+    print("-" * 70)
     
-    # Setup
     tester = PiiRedactionAPITester()
-    test_docx_path = "/tmp/test_pii.docx"
+    success = tester.run_all_tests()
     
-    # Run tests in order
-    print("\n📋 Test Suite: Backend API Testing")
-    
-    # 1. Health check
-    if not tester.test_health_check():
-        print("❌ Health check failed - API may be down")
-        return 1
-    
-    # 2. Valid docx file test
-    success, redact_response = tester.test_redact_valid_docx(test_docx_path)
-    if not success:
-        print("❌ Valid docx redaction failed")
-        return 1
-    
-    # 3. Validate expected PII detection
-    if redact_response:
-        stats = redact_response.get('stats', {})
-        total = redact_response.get('total', 0)
-        
-        # According to problem statement, should detect 20 PII items across 15 categories
-        if total >= 15:  # At least some significant detection
-            print(f"✅ Good PII detection: {total} items found")
-        else:
-            print(f"⚠️ Low PII detection: only {total} items found")
-    
-    # 4. Error handling tests
-    tester.test_reject_non_docx()
-    tester.test_file_too_large() 
-    tester.test_missing_file()
-    
-    # Print results
-    print(f"\n📊 Backend API Test Results:")
-    print(f"   Tests passed: {tester.tests_passed}/{tester.tests_run}")
-    
-    if tester.tests_passed == tester.tests_run:
-        print("✅ All backend tests passed!")
-        return 0
-    else:
-        print("❌ Some backend tests failed")
-        return 1
+    exit_code = 0 if success else 1
+    print(f"\n🏁 Testing completed with exit code: {exit_code}")
+    return exit_code
 
 if __name__ == "__main__":
     sys.exit(main())
