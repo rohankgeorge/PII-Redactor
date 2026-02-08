@@ -253,7 +253,7 @@ def _redact_names(text: str, tracker: PIITracker, ctx: str) -> str:
     # 4c: Dictionary-based Indian names (single words)
     if NAME_DICT_PATTERN:
         def _dict_repl(m):
-            if "[REDACTED_" in text[max(0, m.start() - 12):m.start()]:
+            if _is_inside_placeholder(text, m.start()):
                 return m.group()
             return tracker.placeholder("INDIVIDUAL", m.group(), ctx)
         text = NAME_DICT_PATTERN.sub(_dict_repl, text)
@@ -282,7 +282,7 @@ def _redact_locations(text: str, tracker: PIITracker, ctx: str) -> str:
         return text
 
     def _repl(m):
-        if "[REDACTED_" in text[max(0, m.start() - 12):m.start()]:
+        if _is_inside_placeholder(text, m.start()):
             return m.group()
         return tracker.placeholder("LOCATION", m.group(), ctx)
     return LOCATION_DICT_PATTERN.sub(_repl, text)
