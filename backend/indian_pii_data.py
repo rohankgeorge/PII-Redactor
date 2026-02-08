@@ -53,19 +53,14 @@ PII_REGEX_PATTERNS = [
     )),
 
     # Indian Phone Number  (+91 / 0‑prefix optional, starts 6‑9)
+    # Handles spaces within the number: +91 62908 45190
     ("PHONE_NUMBER", re.compile(
-        r"(?:\+91[\s\-]?)?(?:\(?0?\d{2,4}\)?[\s\-]?)?\b[6-9]\d{9}\b"
+        r"(?:\+91[\s\-]?)?(?:\(?0?\d{2,4}\)?[\s\-]?)?\b[6-9]\d{4}[\s\-]?\d{5}\b"
     )),
 
     # Bank Account (context‑dependent)
     ("BANK_ACCOUNT", re.compile(
         r"(?:(?:A/C|a/c|[Aa]ccount|ACC|Acc)[\s]*(?:No\.?|Number|#|:)?[\s]*)\d{9,18}\b"
-    )),
-
-    # Address fragments – flat/house/plot + number
-    ("ADDRESS", re.compile(
-        r"(?:(?:[Ff]lat|[Hh]ouse|[Pp]lot|[Rr]oom|[Dd]oor|[Bb]uilding|[Bb]lock|[Ss]ector|[Pp]hase|[Ww]ard)"
-        r"\s*(?:[Nn]o\.?|[Nn]umber|#)?[\s:.\-]*[\w\-/]+)",
     )),
 
     # Indian PIN Code – 6 digits, first digit 1‑9
