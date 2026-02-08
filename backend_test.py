@@ -489,31 +489,45 @@ class PiiRedactionAPITester:
             return False
 
     def run_all_tests(self):
-        """Run all backend API tests"""
-        print("🚀 Starting Comprehensive Backend Tests for PII Redaction Tool")
+        """Run all backend API tests - focusing on new download architecture"""
+        print("🚀 Starting Backend Tests for PII Redaction Tool - Iteration 3")
+        print("🎯 Focus: New download architecture with file_id system and server-side file serving")
         print(f"Testing endpoint: {self.base_url}")
-        print("=" * 70)
+        print("=" * 80)
 
         # Basic connectivity test
         if not self.test_health_check():
             print("\n❌ Health check failed - API may be down")
             return False
 
-        # Core functionality tests
+        # Core functionality tests with new file_id format
         docx_success, docx_data = self.test_redact_docx_file()
-        self.test_redact_doc_file()
-        self.test_batch_processing_simulation()
+        doc_success, doc_data = self.test_redact_doc_file()
+        batch_success, file_ids = self.test_batch_processing_simulation()
+        
+        # Test new download endpoints
+        if docx_success and docx_data.get('file_id'):
+            print("\n📥 Testing new download endpoints...")
+            self.test_download_endpoint(docx_data['file_id'], docx_data.get('filename', ''))
+            self.test_audit_csv_endpoint(docx_data['file_id'])
+            self.test_file_ttl_expiry(docx_data['file_id'])
+        
+        # Test batch audit CSV endpoint
+        if batch_success and file_ids:
+            print("\n📊 Testing batch audit CSV endpoint...")
+            self.test_batch_audit_csv_endpoint(file_ids)
         
         # Detailed audit log testing
         if docx_success and docx_data:
             self.test_audit_log_structure(docx_data)
         
         # Edge case tests
+        print("\n🔍 Testing edge cases...")
         self.test_invalid_file_type()
         self.test_oversized_file()
 
         # Print comprehensive summary
-        print("\n" + "=" * 70)
+        print("\n" + "=" * 80)
         print(f"📊 Test Summary: {self.tests_passed}/{self.tests_run} tests passed")
         print(f"🎯 Success Rate: {(self.tests_passed/self.tests_run)*100:.1f}%")
         
@@ -522,6 +536,8 @@ class PiiRedactionAPITester:
             for result in self.test_results:
                 if result["status"] == "FAILED":
                     print(f"   • {result['test']}: {result['details']}")
+        else:
+            print("\n✅ All tests passed! New download architecture working correctly.")
         
         # Save detailed results
         try:
@@ -534,7 +550,8 @@ class PiiRedactionAPITester:
                         "success_rate": f"{(self.tests_passed/self.tests_run)*100:.1f}%" if self.tests_run > 0 else "0%"
                     },
                     "detailed_results": self.test_results,
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.now().isoformat(),
+                    "tested_file_ids": file_ids if batch_success else []
                 }, f, indent=2)
             print(f"\n💾 Detailed results saved to /tmp/backend_test_results.json")
         except Exception as e:
