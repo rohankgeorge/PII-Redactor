@@ -115,15 +115,24 @@ PLACE_ADDRESS_PATTERN = re.compile(
 TITLE_NAME_PATTERN = re.compile(
     r"(?:Mr\.?\s*|Mrs\.?\s*|Ms\.?\s*|Dr\.?\s*|Prof\.?\s*|"
     r"Shri\.?\s*|Smt\.?\s*|Sri\.?\s*)"
-    r"([A-Z][a-z']+(?:\s+[A-Z][a-z']+|\s+[A-Z]\.)*"
-    r"(?:\s+[dDlL]\'?\s*[A-Z][a-z']+)?)",       # Handle D'Rozario etc.
+    r"([A-Z][a-z]+(?:"
+    r"\s+[A-Z]'[A-Z][a-z]+"       # D'Rozario
+    r"|\s+[A-Z]\s+[A-Z][a-z]+"    # D Rozario (initial + space + name)
+    r"|\s+[A-Z][a-z]+"            # Regular word (Sean, Sharma)
+    r"|\s+[A-Z]\."                # Initial with dot (N.)
+    r")*)",
 )
 
 # Name from context ("Name:" or "Name & Title:")
 CONTEXT_NAME_PATTERN = re.compile(
     r"(?:Name(?:\s*&\s*Title)?(?:\s+of\s+\w+(?:'s)?\s+Representative)?)\s*"
     r"[:\-–]\s*"
-    r"([A-Z][a-z']+(?:\s+[A-Z]\.|\s+[A-Z][a-z']+|\s+[dDlL]\'?\s*[A-Z][a-z']+)*)",
+    r"([A-Z][a-z]+(?:"
+    r"\s+[A-Z]'[A-Z][a-z]+"
+    r"|\s+[A-Z]\s+[A-Z][a-z]+"
+    r"|\s+[A-Z][a-z]+"
+    r"|\s+[A-Z]\."
+    r")*)",
 )
 
 # Build massive name set and pattern
