@@ -238,11 +238,26 @@ def _redact_entities(text: str, tracker: PIITracker, ctx: str) -> str:
     return text
 
 
-def _redact_ids(text: str, tracker: PIITracker, ctx: str) -> str:
-    """Pass 3: Detect specific ID patterns (Aadhaar, PAN, etc.)."""
+def _redact_pre_address_ids(text: str, tracker: PIITracker, ctx: str) -> str:
+    """Pass 2: Detect specific IDs BEFORE addresses (Aadhaar, PAN, etc. — not PIN codes)."""
     for category, pattern in PII_REGEX_PATTERNS:
+        if category == "PIN_CODE":
+            continue  # PIN codes handled after addresses
         def _repl(m, cat=category):
-            if "[REDACTED_" in m.group():
+            if _is_inside_placeholder(text, m.start()):
+                return m.group()
+            return tracker.placeholder(cat, m.group(), ctx)
+        text = pattern.sub(_repl, text)
+    return text
+
+
+def _redact_post_address_ids(text: str, tracker: PIITracker, ctx: str) -> str:
+    """Pass 4: Detect standalone PIN codes (those not already captured in addresses)."""
+    for category, pattern in PII_REGEX_PATTERNS:
+        if category != "PIN_CODE":
+            continue
+        def _repl(m, cat=category):
+            if _is_inside_placeholder(text, m.start()):
                 return m.group()
             return tracker.placeholder(cat, m.group(), ctx)
         text = pattern.sub(_repl, text)
@@ -316,9 +331,10 @@ def redact_text(text: str, tracker: PIITracker, context: str = "") -> str:
     if not text or not text.strip():
         return text
 
+    text = _redact_pre_address_ids(text, tracker, context)
     text = _redact_addresses(text, tracker, context)
     text = _redact_entities(text, tracker, context)
-    text = _redact_ids(text, tracker, context)
+    text = _redact_post_address_ids(text, tracker, context)
     text = _redact_names(text, tracker, context)
     text = _redact_locations(text, tracker, context)
 
