@@ -9,28 +9,6 @@ import PrivacyFooter from "@/components/PrivacyFooter";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
-function downloadBlob(base64Data, filename, mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
-  try {
-    const bytes = atob(base64Data);
-    const arr = new Uint8Array(bytes.length);
-    for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-    const blob = new Blob([arr], { type: mimeType });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.style.display = "none";
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-    }, 250);
-  } catch {
-    toast.error("Download failed");
-  }
-}
-
 export default function Home() {
   const [state, setState] = useState("idle");
   const [results, setResults] = useState([]);
@@ -84,51 +62,46 @@ export default function Home() {
     }
   }, []);
 
+  /* ── Direct-URL downloads (no blobs, no a.click hacks) ── */
   const handleDownload = useCallback(
     (index) => {
       const r = results[index];
-      if (r?.result?.file_base64) downloadBlob(r.result.file_base64, r.result.filename);
+      if (r?.result?.file_id) {
+        window.open(`${API}/download/${r.result.file_id}`, "_blank");
+      }
     },
     [results],
   );
 
   const handleDownloadAll = useCallback(() => {
     results.forEach((r, i) => {
-      if (r?.result?.file_base64) setTimeout(() => downloadBlob(r.result.file_base64, r.result.filename), i * 300);
+      if (r?.result?.file_id) {
+        setTimeout(() => window.open(`${API}/download/${r.result.file_id}`, "_blank"), i * 400);
+      }
     });
   }, [results]);
 
   const handleExportAudit = useCallback(() => {
-    let csv = "Document,Category,Placeholder,Location\n";
-    results.forEach((r) => {
-      (r.result?.audit_log || []).forEach((e) => {
-        csv += `"${r.fileName}","${e.category}","${e.placeholder}","${e.location}"\n`;
+    const fileIds = results.filter((r) => r.result?.file_id).map((r) => r.result.file_id);
+    if (fileIds.length === 1) {
+      window.open(`${API}/audit-csv/${fileIds[0]}`, "_blank");
+    } else if (fileIds.length > 1) {
+      // POST batch audit request — open via form submission
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = `${API}/audit-csv-batch`;
+      form.target = "_blank";
+      form.style.display = "none";
+      fileIds.forEach((id) => {
+        const input = document.createElement("input");
+        input.name = "file_ids";
+        input.value = id;
+        form.appendChild(input);
       });
-    });
-    csv += "\n\nSummary\nDocument,Total PII,Status\n";
-    results.forEach((r) => {
-      csv += `"${r.fileName}",${r.result?.total || 0},"${r.error || "Success"}"\n`;
-    });
-    // Category breakdown
-    csv += "\n\nCategory Breakdown\nDocument,Category,Count\n";
-    results.forEach((r) => {
-      Object.entries(r.result?.stats || {}).forEach(([cat, count]) => {
-        csv += `"${r.fileName}","${cat}",${count}\n`;
-      });
-    });
-
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.style.display = "none";
-    a.href = url;
-    a.download = `pii_audit_report_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-    }, 250);
+      document.body.appendChild(form);
+      form.submit();
+      setTimeout(() => document.body.removeChild(form), 500);
+    }
   }, [results]);
 
   const handleReset = useCallback(() => {
