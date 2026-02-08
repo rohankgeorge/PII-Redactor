@@ -1,34 +1,48 @@
-.App-logo {
-    height: 40vmin;
-    pointer-events: none;
+/* Hero glow background */
+.hero-glow {
+  background: radial-gradient(
+    circle at center,
+    rgba(59, 130, 246, 0.12) 0%,
+    transparent 70%
+  );
 }
 
-@media (prefers-reduced-motion: no-preference) {
-    .App-logo {
-        animation: App-logo-spin infinite 20s linear;
-    }
+/* Scan line effect for processing state */
+.scan-line-overlay {
+  position: relative;
+  overflow: hidden;
+}
+.scan-line-overlay::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(16, 185, 129, 0.3),
+    transparent
+  );
+  height: 40%;
+  animation: scan-sweep 1.8s linear infinite;
+}
+@keyframes scan-sweep {
+  0% { top: -40%; }
+  100% { top: 100%; }
 }
 
-.App-header {
-    background-color: #0f0f10;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: calc(10px + 2vmin);
-    color: white;
+/* Upload zone glow on drag */
+.upload-zone-active {
+  border-color: hsl(217 91% 60%);
+  background: rgba(59, 130, 246, 0.06);
+  box-shadow: 0 0 30px rgba(59, 130, 246, 0.15);
 }
 
-.App-link {
-    color: #61dafb;
-}
-
-@keyframes App-logo-spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
-}
+/* Staggered fade-in */
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.1s; }
+.stagger-3 { animation-delay: 0.15s; }
+.stagger-4 { animation-delay: 0.2s; }
+.stagger-5 { animation-delay: 0.25s; }
+.stagger-6 { animation-delay: 0.3s; }
+.stagger-7 { animation-delay: 0.35s; }
+.stagger-8 { animation-delay: 0.4s; }
