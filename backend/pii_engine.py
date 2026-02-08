@@ -65,8 +65,7 @@ _ENTITY_SUFFIX = (
 ENTITY_PATTERN = re.compile(
     r"\b(?!(?:Mr|Mrs|Ms|Dr|Prof|Shri|Smt|Sri)\.?\s)"   # Exclude titles
     r"([A-Z][\w]+(?:[\s&]+[A-Z][\w]+){0,6})\s+"
-    + _ENTITY_SUFFIX + r"\.?\b",
-    re.IGNORECASE,
+    + r"(?i:" + _ENTITY_SUFFIX + r")" + r"\.?\b",       # Case-insensitive suffix only
 )
 
 def _entity_category(suffix: str) -> str:
