@@ -1,0 +1,146 @@
+{
+  "project_name": "RedactAI - Secure Indian PII Redaction",
+  "identity": {
+    "persona": "The Stealth Utility",
+    "emotion": "Trust, Precision, Security, Stealth",
+    "archetype": "Archetype 7 Variant: The Tactical Vault",
+    "design_principle": "Information over Decoration. Function is Beauty.",
+    "theme_strategy": "Dark Mode First (Obsidian & Electric Accents)"
+  },
+  "typography": {
+    "font_family": {
+      "headings": "Chivo, sans-serif",
+      "body": "Inter, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "scale": {
+      "h1": "text-4xl md:text-6xl font-black tracking-tight leading-none",
+      "h2": "text-3xl md:text-4xl font-bold tracking-tight",
+      "h3": "text-xl md:text-2xl font-bold tracking-tight",
+      "body": "text-base leading-relaxed text-muted-foreground",
+      "mono": "text-sm md:text-base font-mono tracking-wide"
+    },
+    "usage_rules": [
+      "Use Chivo for all major headings (Hero, Section Titles).",
+      "Use JetBrains Mono for all data points, file names, redacted text previews, and statistics.",
+      "Use Inter for instructions, body text, and privacy notices.",
+      "Headings must be white or off-white (#FAFAFA). Body text must be muted (#A1A1AA)."
+    ]
+  },
+  "colors": {
+    "palette": {
+      "background": "#050505",
+      "foreground": "#FAFAFA",
+      "card": "#0A0A0A",
+      "card_foreground": "#FAFAFA",
+      "popover": "#0A0A0A",
+      "popover_foreground": "#FAFAFA",
+      "primary": "#3B82F6",
+      "primary_foreground": "#FFFFFF",
+      "secondary": "#27272A",
+      "secondary_foreground": "#FAFAFA",
+      "muted": "#27272A",
+      "muted_foreground": "#A1A1AA",
+      "accent": "#3B82F6",
+      "accent_foreground": "#FFFFFF",
+      "destructive": "#EF4444",
+      "destructive_foreground": "#FFFFFF",
+      "success": "#10B981",
+      "border": "#27272A",
+      "input": "#27272A",
+      "ring": "#3B82F6"
+    },
+    "gradients": {
+      "hero_glow": "radial-gradient(circle at center, rgba(59, 130, 246, 0.15) 0%, rgba(5, 5, 5, 0) 70%)",
+      "scan_line": "linear-gradient(to bottom, transparent, rgba(16, 185, 129, 0.5), transparent)"
+    },
+    "utility_colors": {
+      "pii_found": "#EF4444",
+      "pii_safe": "#10B981",
+      "pii_highlight": "rgba(239, 68, 68, 0.2)"
+    }
+  },
+  "layout": {
+    "spacing_system": "Comfortable but technical. Use p-8 for cards, p-24 for section gaps.",
+    "container": "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8",
+    "grid_strategy": "Bento Grid for Stats. Single Column for Flow.",
+    "modes": {
+      "bento_stats": "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6",
+      "hero_centered": "flex flex-col items-center justify-center min-h-[60vh] text-center"
+    }
+  },
+  "components": {
+    "buttons": {
+      "style": "Sharp or slightly rounded (rounded-md). High contrast.",
+      "primary": "bg-primary hover:bg-primary/90 text-white shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all",
+      "secondary": "bg-secondary hover:bg-secondary/80 text-white border border-border"
+    },
+    "cards": {
+      "style": "Flat, minimal, 1px border. No heavy shadows. 'Tech' feel.",
+      "base": "bg-card border border-border rounded-lg p-6 hover:border-primary/50 transition-colors"
+    },
+    "inputs": {
+      "style": "Minimalist, dark background, focus ring.",
+      "base": "bg-input border-transparent focus:border-primary focus:ring-1 focus:ring-primary rounded-md h-11"
+    },
+    "upload_zone": {
+      "style": "Dashed border (border-dashed), active state glow.",
+      "base": "border-2 border-dashed border-muted-foreground/25 hover:border-primary/50 hover:bg-primary/5 rounded-xl transition-all duration-300 cursor-pointer flex flex-col items-center justify-center p-12"
+    },
+    "progress_bar": {
+      "style": "Slim, precise.",
+      "base": "h-2 bg-secondary rounded-full overflow-hidden",
+      "indicator": "h-full bg-primary transition-all duration-500 ease-out"
+    }
+  },
+  "visual_enhancers": {
+    "textures": "Subtle noise overlay (opacity 0.03) on background.",
+    "effects": [
+      "Scanline animation for processing state.",
+      "Glitch effect on 'Redacted' text hover.",
+      "Glowing borders on active inputs."
+    ],
+    "icons": {
+      "library": "lucide-react",
+      "style": "Stroke width 1.5px. Sharp and technical."
+    }
+  },
+  "motion": {
+    "entrance": "fade-in-up (opacity 0 -> 1, y 20px -> 0)",
+    "hover": "scale-105 for cards, glow intensity increase for buttons",
+    "processing": "infinite scan loop (top to bottom gradient)"
+  },
+  "images_and_media": {
+    "strategy": "Minimalist. Use abstract tech patterns or 3D icons sparingly.",
+    "hero_background": "https://images.unsplash.com/photo-1762279388956-1c098163a2a8?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2OTF8MHwxfHNlYXJjaHwyfHxhYnN0cmFjdCUyMGRpZ2l0YWwlMjBkYXRhJTIwc3RyZWFtJTIwZGFyayUyMGJhY2tncm91bmR8ZW58MHx8fHwxNzcwNDgyNjcxfDA&ixlib=rb-4.1.0&q=85",
+    "privacy_icon": "https://images.unsplash.com/photo-1696013910376-c56f76dd8178?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTZ8MHwxfHNlYXJjaHwyfHxjeWJlciUyMHNlY3VyaXR5JTIwc2hpZWxkJTIwbG9jayUyMGRhcmslMjBiYWNrZ3JvdW5kfGVufDB8fHx8MTc3MDU2MDI1OXww&ixlib=rb-4.1.0&q=85",
+    "usage": "Use 'hero_background' as a subtle layer with low opacity behind the main upload section. Use 'privacy_icon' for the 'Privacy First' section or OG image."
+  },
+  "accessibility": {
+    "rules": [
+      "Ensure text contrast ratio >= 4.5:1.",
+      "Focus states must be clearly visible (ring-2 ring-primary).",
+      "Interactive elements must have aria-labels.",
+      "Red vs Green distinction must not rely solely on color (add icons/text)."
+    ]
+  },
+  "instructions_to_main_agent": {
+    "general": "Build a single-page application. Focus on the 'Drop Zone' interactions. It must feel snappy and secure.",
+    "theme_setup": "Force dark mode in tailwind config or root layout. This tool is 'The Stealth Utility'.",
+    "components": "Customize Shadcn components to match the 'Obsidian & Electric' palette. Remove default radius if needed for a sharper look.",
+    "layout_structure": [
+      "Header: Logo (RedactAI) + 'Client-Side Only' Badge.",
+      "Hero: Title + Value Prop + Drag & Drop Zone.",
+      "Processing: Show a 'Scanning...' state with a progress bar and file name.",
+      "Results: Bento Grid of PII detected (Total, Aadhaar, PAN, etc.).",
+      "Action: 'Download Redacted Doc' button (Primary) + 'Preview' toggle.",
+      "Footer: Privacy Notice + Tech Stack info."
+    ]
+  },
+  "universal_guidelines": [
+    "Do not use gradients for text.",
+    "Do not center align the app container globally.",
+    "Use 'sonner' for toasts.",
+    "Add 'data-testid' to all interactive elements."
+  ]
+}
