@@ -1,6 +1,15 @@
+#!/usr/bin/env python3
+"""
+Backend API Testing for Indian PII Redaction Tool - Updated
+Tests all endpoints with focus on new features: .doc support, audit_log, batch processing
+"""
+
 import requests
 import sys
 import os
+import json
+import base64
+from pathlib import Path
 from datetime import datetime
 
 class PiiRedactionAPITester:
@@ -8,13 +17,33 @@ class PiiRedactionAPITester:
         self.base_url = base_url
         self.tests_run = 0
         self.tests_passed = 0
+        self.test_results = []
+
+    def log_test(self, name, success, details="", response_data=None):
+        """Log test result with detailed information"""
+        self.tests_run += 1
+        if success:
+            self.tests_passed += 1
+        
+        result = {
+            "test": name,
+            "status": "PASSED" if success else "FAILED",
+            "details": details,
+            "timestamp": datetime.now().isoformat(),
+            "response_data": response_data
+        }
+        self.test_results.append(result)
+        
+        status_emoji = "✅" if success else "❌"
+        print(f"{status_emoji} {name}")
+        if details:
+            print(f"   {details}")
 
     def run_test(self, name, method, endpoint, expected_status, data=None, files=None, headers=None):
         """Run a single API test"""
         url = f"{self.base_url}{endpoint}"
         request_headers = headers or {}
         
-        self.tests_run += 1
         print(f"\n🔍 Testing {name}...")
         print(f"   URL: {url}")
         
@@ -28,24 +57,24 @@ class PiiRedactionAPITester:
                     response = requests.post(url, json=data, headers=request_headers, timeout=30)
 
             success = response.status_code == expected_status
+            details = f"Status: {response.status_code}"
+            response_data = None
+            
             if success:
-                self.tests_passed += 1
-                print(f"✅ Passed - Status: {response.status_code}")
                 if response.headers.get('content-type', '').startswith('application/json'):
                     try:
-                        resp_data = response.json()
-                        print(f"   Response preview: {str(resp_data)[:200]}...")
-                        return success, resp_data
+                        response_data = response.json()
+                        details += f", Response keys: {list(response_data.keys()) if isinstance(response_data, dict) else 'Non-dict response'}"
                     except:
-                        pass
-                return success, {}
+                        details += ", JSON parse error"
             else:
-                print(f"❌ Failed - Expected {expected_status}, got {response.status_code}")
-                print(f"   Response: {response.text[:300]}...")
-                return False, {}
+                details += f", Error: {response.text[:200]}"
+            
+            self.log_test(name, success, details, response_data)
+            return success, response_data or {}
 
         except requests.exceptions.Timeout:
-            print(f"❌ Failed - Request timed out")
+            self.log_test(name, False, "Request timed out")
             return False, {}
         except Exception as e:
             print(f"❌ Failed - Error: {str(e)}")
