@@ -292,7 +292,7 @@ async def download_audit_csv(file_id: str):
 
 
 @api_router.post("/audit-csv-batch")
-async def download_batch_audit_csv(file_ids: List[str] = []):
+async def download_batch_audit_csv(file_ids: List[str] = File(default=[])):
     """Generate a single audit CSV combining multiple processed files."""
     buf = io.StringIO()
     writer = csv.writer(buf)
