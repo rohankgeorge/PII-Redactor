@@ -560,9 +560,10 @@ class PiiRedactionAPITester:
         return self.tests_passed == self.tests_run
 
 def main():
-    print("Indian PII Redaction Tool - Backend API Testing")
-    print("Testing new features: .doc support, audit_log, batch processing")
-    print("-" * 70)
+    print("Indian PII Redaction Tool - Backend API Testing - Iteration 3")
+    print("Focus: Testing new download architecture with file_id system")
+    print("New endpoints: /api/download/{file_id}, /api/audit-csv/{file_id}, /api/audit-csv-batch")
+    print("-" * 80)
     
     tester = PiiRedactionAPITester()
     success = tester.run_all_tests()
