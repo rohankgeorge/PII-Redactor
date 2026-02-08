@@ -212,7 +212,7 @@ def _redact_entities(text: str, tracker: PIITracker, ctx: str) -> str:
         if len(sn) >= 3:
             safe = re.escape(sn)
             def _sn_repl(m, _sn=sn):
-                if "[REDACTED_" in text[max(0, m.start() - 10):m.start()]:
+                if _is_inside_placeholder(text, m.start()):
                     return m.group()
                 return tracker.placeholder("ENTITY", _sn, ctx)
             text = re.sub(r"\b" + safe + r"\b", _sn_repl, text)
