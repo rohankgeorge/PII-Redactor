@@ -294,6 +294,195 @@ class PiiRedactionAPITester:
             self.log_test("Audit Log Structure", False, f"Error: {str(e)}")
             return False
 
+    def test_download_endpoint(self, file_id, expected_filename=""):
+        """Test the new /api/download/{file_id} endpoint"""
+        try:
+            if not file_id:
+                self.log_test("Download Endpoint", False, "No file_id provided")
+                return False
+            
+            response = requests.get(f"{self.base_url}/download/{file_id}", timeout=30)
+            success = response.status_code == 200
+            
+            if success:
+                # Check Content-Disposition header
+                content_disp = response.headers.get('Content-Disposition', '')
+                has_attachment = 'attachment' in content_disp
+                
+                # Check content type
+                content_type = response.headers.get('Content-Type', '')
+                is_docx = 'wordprocessingml' in content_type or 'vnd.openxmlformats' in content_type
+                
+                # Check content length
+                content_len = len(response.content)
+                
+                details = f"Status: 200, Content-Length: {content_len}, Content-Type: {content_type[:50]}"
+                if has_attachment:
+                    details += f", Content-Disposition: {content_disp[:100]}"
+                else:
+                    details += ", Missing attachment header"
+                    success = False
+                    
+                if not is_docx:
+                    details += ", Wrong content type"
+                    success = False
+                
+                if content_len < 1000:  # DOCX files should be larger
+                    details += ", Suspiciously small file"
+                    success = False
+                    
+            else:
+                details = f"Status: {response.status_code}, Error: {response.text[:200]}"
+            
+            self.log_test("Download Endpoint", success, details)
+            return success
+            
+        except Exception as e:
+            self.log_test("Download Endpoint", False, f"Error: {str(e)}")
+            return False
+
+    def test_audit_csv_endpoint(self, file_id):
+        """Test the new /api/audit-csv/{file_id} endpoint"""
+        try:
+            if not file_id:
+                self.log_test("Audit CSV Endpoint", False, "No file_id provided")
+                return False
+            
+            response = requests.get(f"{self.base_url}/audit-csv/{file_id}", timeout=30)
+            success = response.status_code == 200
+            
+            if success:
+                # Check Content-Disposition header
+                content_disp = response.headers.get('Content-Disposition', '')
+                has_attachment = 'attachment' in content_disp and '.csv' in content_disp
+                
+                # Check content type
+                content_type = response.headers.get('Content-Type', '')
+                is_csv = 'text/csv' in content_type
+                
+                # Check CSV content
+                content = response.text
+                has_header = 'Category,Placeholder,Location' in content
+                has_summary = 'Summary' in content and 'TOTAL' in content
+                
+                details = f"Status: 200, Content-Type: {content_type}, Length: {len(content)}"
+                if has_attachment:
+                    details += ", Has attachment header"
+                else:
+                    details += ", Missing attachment header"
+                    success = False
+                    
+                if not is_csv:
+                    details += ", Wrong content type"
+                    success = False
+                
+                if not (has_header and has_summary):
+                    details += ", Missing CSV structure"
+                    success = False
+                else:
+                    details += ", Valid CSV structure"
+                    
+            else:
+                details = f"Status: {response.status_code}, Error: {response.text[:200]}"
+            
+            self.log_test("Audit CSV Endpoint", success, details)
+            return success
+            
+        except Exception as e:
+            self.log_test("Audit CSV Endpoint", False, f"Error: {str(e)}")
+            return False
+
+    def test_file_ttl_expiry(self, file_id):
+        """Test file TTL (10-minute expiry) functionality"""
+        try:
+            if not file_id:
+                self.log_test("File TTL Expiry (Simulated)", False, "No file_id provided")
+                return False
+            
+            # First verify file exists
+            response = requests.get(f"{self.base_url}/download/{file_id}", timeout=10)
+            if response.status_code != 200:
+                self.log_test("File TTL Expiry (Simulated)", False, f"File not found initially: {response.status_code}")
+                return False
+            
+            # Test with fake/expired file_id
+            fake_id = "a" * 32  # Invalid file_id
+            response = requests.get(f"{self.base_url}/download/{fake_id}", timeout=10)
+            
+            success = response.status_code == 404
+            details = f"Status: {response.status_code} (expected 404 for expired/invalid file)"
+            
+            if success:
+                try:
+                    error_data = response.json()
+                    error_msg = error_data.get('detail', '')
+                    if 'expired' in error_msg.lower() or 'not found' in error_msg.lower():
+                        details += f", Error: {error_msg}"
+                    else:
+                        details += ", Missing proper error message"
+                except:
+                    details += ", Non-JSON error response"
+            
+            self.log_test("File TTL Expiry (Simulated)", success, details)
+            return success
+            
+        except Exception as e:
+            self.log_test("File TTL Expiry (Simulated)", False, f"Error: {str(e)}")
+            return False
+
+    def test_batch_audit_csv_endpoint(self, file_ids):
+        """Test the new /api/audit-csv-batch endpoint"""
+        try:
+            if not file_ids:
+                self.log_test("Batch Audit CSV Endpoint", False, "No file_ids provided")
+                return False
+            
+            # POST request with file_ids
+            data = {"file_ids": file_ids}
+            response = requests.post(f"{self.base_url}/audit-csv-batch", json=data, timeout=30)
+            success = response.status_code == 200
+            
+            if success:
+                # Check Content-Disposition header
+                content_disp = response.headers.get('Content-Disposition', '')
+                has_attachment = 'attachment' in content_disp and 'pii_audit_report.csv' in content_disp
+                
+                # Check content type
+                content_type = response.headers.get('Content-Type', '')
+                is_csv = 'text/csv' in content_type
+                
+                # Check batch CSV content
+                content = response.text
+                has_doc_header = 'Document,Category,Placeholder,Location' in content
+                has_summary = 'Summary' in content and 'Document,Total PII,Status' in content
+                has_breakdown = 'Category Breakdown' in content
+                
+                details = f"Status: 200, Content-Type: {content_type}, Files: {len(file_ids)}, Length: {len(content)}"
+                
+                if not has_attachment:
+                    details += ", Missing attachment header"
+                    success = False
+                    
+                if not is_csv:
+                    details += ", Wrong content type"
+                    success = False
+                
+                if not (has_doc_header and has_summary and has_breakdown):
+                    details += ", Missing batch CSV structure"
+                    success = False
+                else:
+                    details += ", Valid batch CSV structure"
+                    
+            else:
+                details = f"Status: {response.status_code}, Error: {response.text[:200]}"
+            
+            self.log_test("Batch Audit CSV Endpoint", success, details)
+            return success
+            
+        except Exception as e:
+            self.log_test("Batch Audit CSV Endpoint", False, f"Error: {str(e)}")
+            return False
+
     def run_all_tests(self):
         """Run all backend API tests"""
         print("🚀 Starting Comprehensive Backend Tests for PII Redaction Tool")
