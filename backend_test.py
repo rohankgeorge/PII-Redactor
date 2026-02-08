@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-Backend API Testing for Indian PII Redaction Tool - Comprehensive Tests
-Tests all endpoints with focus on new features: .doc support, audit_log, batch processing
+Backend API Testing for Indian PII Redaction Tool - Iteration 3 Tests
+Focus: New download architecture with file_id system, server-side file serving, TTL expiry
+Tests: /api/download/{file_id}, /api/audit-csv/{file_id}, /api/audit-csv-batch endpoints
 """
 
 import requests
 import sys
 import os
 import json
-import base64
+import time
 from pathlib import Path
 from datetime import datetime
 
