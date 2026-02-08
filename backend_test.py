@@ -62,11 +62,11 @@ class PiiRedactionAPITester:
             return False
 
     def test_redact_docx_file(self):
-        """Test redaction with .docx file - focusing on new audit_log feature"""
+        """Test redaction with .docx file - focusing on new file_id response format"""
         try:
             file_path = Path("/tmp/test_pii.docx")
             if not file_path.exists():
-                self.log_test("Redact DOCX File", False, "Test file /tmp/test_pii.docx not found")
+                self.log_test("Redact DOCX File (New Format)", False, "Test file /tmp/test_pii.docx not found")
                 return False, {}
 
             with open(file_path, 'rb') as f:
@@ -79,7 +79,8 @@ class PiiRedactionAPITester:
             if success:
                 try:
                     response_data = response.json()
-                    required_fields = ['stats', 'total', 'file_base64', 'filename', 'audit_log']
+                    # NEW: Check for file_id instead of file_base64
+                    required_fields = ['stats', 'total', 'file_id', 'filename', 'audit_log']
                     missing_fields = [f for f in required_fields if f not in response_data]
                     
                     if missing_fields:
@@ -90,9 +91,10 @@ class PiiRedactionAPITester:
                         audit_count = len(response_data.get('audit_log', []))
                         stats = response_data.get('stats', {})
                         filename = response_data.get('filename', '')
+                        file_id = response_data.get('file_id', '')
                         
                         # Verify audit_log format
-                        audit_sample = response_data.get('audit_log', [])[:3]  # First 3 entries
+                        audit_sample = response_data.get('audit_log', [])[:3]
                         audit_valid = True
                         for entry in audit_sample:
                             if not all(key in entry for key in ['category', 'placeholder', 'location']):
@@ -103,19 +105,14 @@ class PiiRedactionAPITester:
                             details = f"Invalid audit_log format in response"
                             success = False
                         else:
-                            details = f"PII: {total_pii}, Audit entries: {audit_count}, Stats: {stats}, File: {filename}"
+                            details = f"PII: {total_pii}, Audit entries: {audit_count}, Stats: {stats}, File ID: {file_id}, Filename: {filename}"
                             
-                            # Check if file_base64 is valid
-                            if not response_data.get('file_base64'):
-                                details += " | Missing file_base64"
+                            # NEW: Check if file_id is valid (should be hex string)
+                            if not file_id or len(file_id) != 32:
+                                details += " | Invalid file_id format"
                                 success = False
                             else:
-                                try:
-                                    base64.b64decode(response_data['file_base64'])
-                                    details += " | Valid base64 data"
-                                except:
-                                    details += " | Invalid base64 data"
-                                    success = False
+                                details += " | Valid file_id format"
                         
                 except json.JSONDecodeError:
                     details = "Invalid JSON response"
@@ -123,11 +120,11 @@ class PiiRedactionAPITester:
             else:
                 details = f"Status: {response.status_code}, Error: {response.text[:200]}"
 
-            self.log_test("Redact DOCX File", success, details, response_data if success else None)
+            self.log_test("Redact DOCX File (New Format)", success, details, response_data if success else None)
             return success, response_data
             
         except Exception as e:
-            self.log_test("Redact DOCX File", False, f"Error: {str(e)}")
+            self.log_test("Redact DOCX File (New Format)", False, f"Error: {str(e)}")
             return False, {}
 
     def test_redact_doc_file(self):
