@@ -179,7 +179,7 @@ class PiiRedactionAPITester:
             return False, {}
 
     def test_batch_processing_simulation(self):
-        """Simulate batch processing by sending multiple files"""
+        """Simulate batch processing by sending multiple files - returns file_ids"""
         try:
             test_files = [
                 ("/tmp/test_pii.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
@@ -188,6 +188,7 @@ class PiiRedactionAPITester:
             
             batch_results = []
             total_pii_batch = 0
+            file_ids = []
             
             for file_path, mime_type in test_files:
                 path_obj = Path(file_path)
@@ -201,27 +202,31 @@ class PiiRedactionAPITester:
                 if response.status_code == 200:
                     try:
                         data = response.json()
+                        file_id = data.get('file_id', '')
                         batch_results.append({
                             "file": path_obj.name,
                             "pii_count": data.get('total', 0),
                             "audit_entries": len(data.get('audit_log', [])),
+                            "file_id": file_id,
                             "success": True
                         })
                         total_pii_batch += data.get('total', 0)
+                        if file_id:
+                            file_ids.append(file_id)
                     except:
                         batch_results.append({"file": path_obj.name, "success": False, "error": "JSON parse error"})
                 else:
                     batch_results.append({"file": path_obj.name, "success": False, "error": f"HTTP {response.status_code}"})
 
             success = len(batch_results) > 0 and all(r.get("success", False) for r in batch_results)
-            details = f"Processed {len(batch_results)} files, Total PII: {total_pii_batch}, Results: {batch_results}"
+            details = f"Processed {len(batch_results)} files, Total PII: {total_pii_batch}, File IDs: {len(file_ids)}, Results: {batch_results}"
             
-            self.log_test("Batch Processing Simulation", success, details)
-            return success
+            self.log_test("Batch Processing Simulation", success, details, {"file_ids": file_ids})
+            return success, file_ids
             
         except Exception as e:
             self.log_test("Batch Processing Simulation", False, f"Error: {str(e)}")
-            return False
+            return False, []
 
     def test_invalid_file_type(self):
         """Test rejection of invalid file types"""
