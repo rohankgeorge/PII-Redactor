@@ -169,10 +169,14 @@ _STOP_PHRASES = {
 # Redaction functions – ordered by priority
 # ────────────────────────────────────────────────────────────
 
-def _already_redacted(text: str, start: int, end: int) -> bool:
-    """Check if position overlaps with an existing placeholder."""
-    snippet = text[max(0, start - 1):end + 1]
-    return "[REDACTED_" in snippet
+def _is_inside_placeholder(text: str, pos: int) -> bool:
+    """Check if a position is inside an existing [REDACTED_...] tag."""
+    before = text[:pos]
+    last_open = before.rfind("[REDACTED_")
+    if last_open < 0:
+        return False
+    last_close = before.rfind("]", last_open)
+    return last_close < last_open  # Open bracket found with no matching close
 
 
 def _redact_addresses(text: str, tracker: PIITracker, ctx: str) -> str:
