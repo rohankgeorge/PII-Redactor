@@ -24,6 +24,7 @@ from indian_pii_data import (
     INDIAN_CITIES,
     INDIAN_STATES,
 )
+from pii_engine import PIITracker, redact_text
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -70,18 +71,6 @@ def _cleanup_expired():
     for k in expired:
         del _file_store[k]
 
-# ── Pre‑compile name & location patterns ────────────────────
-_all_names = sorted(INDIAN_FIRST_NAMES | INDIAN_SURNAMES, key=len, reverse=True)
-NAME_PATTERN = re.compile(
-    r"\b(" + "|".join(re.escape(n) for n in _all_names) + r")\b"
-) if _all_names else None
-
-_all_locations = sorted(INDIAN_CITIES | INDIAN_STATES, key=len, reverse=True)
-LOCATION_PATTERN = re.compile(
-    r"\b(" + "|".join(re.escape(loc) for loc in _all_locations) + r")\b",
-    re.IGNORECASE,
-) if _all_locations else None
-
 
 # ── .doc → .docx conversion ─────────────────────────────────
 def convert_doc_to_docx(doc_bytes: bytes) -> bytes:
@@ -121,50 +110,11 @@ def convert_doc_to_docx(doc_bytes: bytes) -> bytes:
 
 
 # ── Core redaction logic ────────────────────────────────────
-def redact_text(
-    text: str,
-    stats: Dict[str, int],
-    audit_log: List[dict] | None = None,
-    context: str = "",
-) -> str:
-    if not text or not text.strip():
-        return text
-
-    # 1. Regex‑based patterns (most → least specific)
-    for category, pattern in PII_REGEX_PATTERNS:
-        def _replacer(match, cat=category):
-            stats[cat] = stats.get(cat, 0) + 1
-            if audit_log is not None:
-                audit_log.append({"category": cat, "placeholder": f"[REDACTED_{cat}]", "location": context})
-            return f"[REDACTED_{cat}]"
-        text = pattern.sub(_replacer, text)
-
-    # 2. Dictionary‑based name detection
-    if NAME_PATTERN:
-        def _name_replacer(match):
-            stats["NAME"] = stats.get("NAME", 0) + 1
-            if audit_log is not None:
-                audit_log.append({"category": "NAME", "placeholder": "[REDACTED_NAME]", "location": context})
-            return "[REDACTED_NAME]"
-        text = NAME_PATTERN.sub(_name_replacer, text)
-
-    # 3. Dictionary‑based location detection
-    if LOCATION_PATTERN:
-        def _loc_replacer(match):
-            stats["LOCATION"] = stats.get("LOCATION", 0) + 1
-            if audit_log is not None:
-                audit_log.append({"category": "LOCATION", "placeholder": "[REDACTED_LOCATION]", "location": context})
-            return "[REDACTED_LOCATION]"
-        text = LOCATION_PATTERN.sub(_loc_replacer, text)
-
-    return text
-
-
-def _process_paragraph(para, stats: Dict[str, int], audit_log: list, ctx: str):
+def _process_paragraph(para, tracker: PIITracker, ctx: str):
     full_text = para.text
     if not full_text.strip():
         return
-    new_text = redact_text(full_text, stats, audit_log, ctx)
+    new_text = redact_text(full_text, tracker, ctx)
     if new_text != full_text and para.runs:
         for i, run in enumerate(para.runs):
             run.text = new_text if i == 0 else ""
@@ -172,14 +122,13 @@ def _process_paragraph(para, stats: Dict[str, int], audit_log: list, ctx: str):
 
 def process_document(doc_bytes: bytes):
     doc = DocxDocument(io.BytesIO(doc_bytes))
-    stats: Dict[str, int] = {}
-    audit_log: list = []
+    tracker = PIITracker()
     para_num = 0
 
     # Paragraphs
     for para in doc.paragraphs:
         para_num += 1
-        _process_paragraph(para, stats, audit_log, f"Paragraph {para_num}")
+        _process_paragraph(para, tracker, f"Paragraph {para_num}")
 
     # Tables (including nested)
     table_num = 0
@@ -191,7 +140,7 @@ def process_document(doc_bytes: bytes):
             for c_idx, cell in enumerate(row.cells):
                 ctx = f"{prefix}Table {table_num}, Row {r_idx+1}, Col {c_idx+1}"
                 for para in cell.paragraphs:
-                    _process_paragraph(para, stats, audit_log, ctx)
+                    _process_paragraph(para, tracker, ctx)
                 for nested in cell.tables:
                     _process_table(nested, prefix=f"{ctx} > ")
 
@@ -202,15 +151,15 @@ def process_document(doc_bytes: bytes):
     for s_idx, section in enumerate(doc.sections):
         if section.header:
             for para in section.header.paragraphs:
-                _process_paragraph(para, stats, audit_log, f"Header (section {s_idx+1})")
+                _process_paragraph(para, tracker, f"Header (section {s_idx+1})")
         if section.footer:
             for para in section.footer.paragraphs:
-                _process_paragraph(para, stats, audit_log, f"Footer (section {s_idx+1})")
+                _process_paragraph(para, tracker, f"Footer (section {s_idx+1})")
 
     buf = io.BytesIO()
     doc.save(buf)
     buf.seek(0)
-    return stats, sum(stats.values()), buf.read(), audit_log
+    return tracker.stats, tracker.total, buf.read(), tracker.audit_log
 
 
 # ── Routes ──────────────────────────────────────────────────
