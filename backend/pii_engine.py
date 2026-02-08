@@ -63,7 +63,9 @@ _ENTITY_SUFFIX = (
     r"Enterprises|Industries|Services|Holdings|Group|Partners|Bank)"
 )
 ENTITY_PATTERN = re.compile(
-    r"\b([A-Z][\w]*(?:[\s&]+[A-Za-z][\w]*)*?)\s+" + _ENTITY_SUFFIX + r"\.?\b",
+    r"\b(?!(?:Mr|Mrs|Ms|Dr|Prof|Shri|Smt|Sri)\.?\s)"   # Exclude titles
+    r"([A-Z][\w]+(?:[\s&]+[A-Z][\w]+){0,6})\s+"
+    + _ENTITY_SUFFIX + r"\.?\b",
     re.IGNORECASE,
 )
 
@@ -86,9 +88,11 @@ _ADDR_START = (
 FULL_ADDRESS_PATTERN = re.compile(
     _ADDR_START
     + r"[A-Za-z]?\d[\w/.\-]*"           # Starting identifier (36, No.97, E123)
-    + r",[\w\s,./\-\'()\&\d:;]+?"       # Comma-separated address body
-    + r"[\s,\-–]*[1-9]\d{5}"            # PIN code
-    + r"(?:\s*,?\s*India)?",             # Optional country
+    + r"\s*"                              # Optional space after number
+    + r"(?=[\w\s,./\-\'()\&\d:;]*,)"     # Lookahead: must contain comma (address is multi-part)
+    + r"[\w\s,./\-\'()\&\d:;]+?"         # Address body (lazy)
+    + r"[\s,\-–]*[1-9]\d{5}"             # PIN code
+    + r"(?:\s*,?\s*India)?",              # Optional country
 )
 
 # Road-starting address (Magadi Main Road ... PIN)
@@ -111,15 +115,15 @@ PLACE_ADDRESS_PATTERN = re.compile(
 TITLE_NAME_PATTERN = re.compile(
     r"(?:Mr\.?\s*|Mrs\.?\s*|Ms\.?\s*|Dr\.?\s*|Prof\.?\s*|"
     r"Shri\.?\s*|Smt\.?\s*|Sri\.?\s*)"
-    r"([A-Z][a-z']+(?:\s+[A-Z][a-z']+|\s+[A-Z]\.?)*"
-    r"(?:\s+[dDlL]\'?[A-Z][a-z']+)?)",       # Handle D'Rozario etc.
+    r"([A-Z][a-z']+(?:\s+[A-Z][a-z']+|\s+[A-Z]\.)*"
+    r"(?:\s+[dDlL]\'?\s*[A-Z][a-z']+)?)",       # Handle D'Rozario etc.
 )
 
 # Name from context ("Name:" or "Name & Title:")
 CONTEXT_NAME_PATTERN = re.compile(
     r"(?:Name(?:\s*&\s*Title)?(?:\s+of\s+\w+(?:'s)?\s+Representative)?)\s*"
     r"[:\-–]\s*"
-    r"([A-Z][a-z']+(?:\s+[A-Z]\.?|\s+[A-Z][a-z']+|\s+[dDlL]\'?[A-Z][a-z']+)*)",
+    r"([A-Z][a-z']+(?:\s+[A-Z]\.|\s+[A-Z][a-z']+|\s+[dDlL]\'?\s*[A-Z][a-z']+)*)",
 )
 
 # Build massive name set and pattern
