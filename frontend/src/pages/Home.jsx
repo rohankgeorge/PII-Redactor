@@ -62,12 +62,18 @@ export default function Home() {
     }
   }, []);
 
-  /* ── Direct-URL downloads (no blobs, no a.click hacks) ── */
+  /* ── Direct-URL downloads via native browser navigation ── */
   const handleDownload = useCallback(
     (index) => {
       const r = results[index];
       if (r?.result?.file_id) {
-        window.open(`${API}/download/${r.result.file_id}`, "_blank");
+        // Using an iframe to trigger download avoids popup blockers
+        // and doesn't navigate away from the current page
+        const iframe = document.createElement("iframe");
+        iframe.style.display = "none";
+        iframe.src = `${API}/download/${r.result.file_id}`;
+        document.body.appendChild(iframe);
+        setTimeout(() => document.body.removeChild(iframe), 10000);
       }
     },
     [results],
@@ -76,7 +82,13 @@ export default function Home() {
   const handleDownloadAll = useCallback(() => {
     results.forEach((r, i) => {
       if (r?.result?.file_id) {
-        setTimeout(() => window.open(`${API}/download/${r.result.file_id}`, "_blank"), i * 400);
+        setTimeout(() => {
+          const iframe = document.createElement("iframe");
+          iframe.style.display = "none";
+          iframe.src = `${API}/download/${r.result.file_id}`;
+          document.body.appendChild(iframe);
+          setTimeout(() => document.body.removeChild(iframe), 10000);
+        }, i * 500);
       }
     });
   }, [results]);
@@ -84,13 +96,16 @@ export default function Home() {
   const handleExportAudit = useCallback(() => {
     const fileIds = results.filter((r) => r.result?.file_id).map((r) => r.result.file_id);
     if (fileIds.length === 1) {
-      window.open(`${API}/audit-csv/${fileIds[0]}`, "_blank");
+      const iframe = document.createElement("iframe");
+      iframe.style.display = "none";
+      iframe.src = `${API}/audit-csv/${fileIds[0]}`;
+      document.body.appendChild(iframe);
+      setTimeout(() => document.body.removeChild(iframe), 10000);
     } else if (fileIds.length > 1) {
-      // POST batch audit request — open via form submission
+      // POST batch audit request via form
       const form = document.createElement("form");
       form.method = "POST";
       form.action = `${API}/audit-csv-batch`;
-      form.target = "_blank";
       form.style.display = "none";
       fileIds.forEach((id) => {
         const input = document.createElement("input");
@@ -100,7 +115,7 @@ export default function Home() {
       });
       document.body.appendChild(form);
       form.submit();
-      setTimeout(() => document.body.removeChild(form), 500);
+      setTimeout(() => document.body.removeChild(form), 1000);
     }
   }, [results]);
 
