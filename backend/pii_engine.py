@@ -207,12 +207,19 @@ def _redact_entities(text: str, tracker: PIITracker, ctx: str) -> str:
 
     def _repl(m):
         full = m.group().strip().rstrip(".")
-        if "[REDACTED_" in full:
+        if _is_inside_placeholder(text, m.start()):
             return m.group()
         name_part = m.group(1).strip()
-        # Determine category from suffix (everything after the name part)
-        suffix_part = full[len(name_part):].strip()
-        cat = _entity_category(suffix_part)
+        # Determine category from full matched text
+        fl = full.lower().replace(".", "").replace(" ", "")
+        if "privatelimited" in fl or "pvtltd" in fl:
+            cat = "PRIVATE_LIMITED"
+        elif "llp" in fl:
+            cat = "LLP"
+        elif "limited" in fl or "ltd" in fl:
+            cat = "LIMITED"
+        else:
+            cat = "ENTITY"
         seen_short_names.append(name_part)
         return tracker.placeholder(cat, full, ctx)
 
@@ -247,15 +254,16 @@ def _redact_names(text: str, tracker: PIITracker, ctx: str) -> str:
 
     # 4a: Title-based names (Mr./Mrs./Dr. + following name)
     def _title_repl(m):
-        if "[REDACTED_" in m.group():
+        if _is_inside_placeholder(text, m.start()):
             return m.group()
-        return tracker.placeholder("INDIVIDUAL", m.group().strip(), ctx)
+        # Track by name-only (group 1) so "Mr. X" and "X" get the same number
+        return tracker.placeholder("INDIVIDUAL", m.group(1).strip(), ctx)
     text = TITLE_NAME_PATTERN.sub(_title_repl, text)
 
     # 4b: Context-based names ("Name:" patterns)
     def _ctx_repl(m):
         name = m.group(1).strip()
-        if "[REDACTED_" in name or len(name) < 3:
+        if _is_inside_placeholder(text, m.start()) or len(name) < 3:
             return m.group()
         prefix = m.group()[:m.group().index(name)]
         return prefix + tracker.placeholder("INDIVIDUAL", name, ctx)
