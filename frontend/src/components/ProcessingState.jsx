@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Loader2, ScanSearch } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 
-export default function ProcessingState({ fileName }) {
+export default function ProcessingState({ fileNames = [] }) {
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
@@ -21,8 +21,16 @@ export default function ProcessingState({ fileName }) {
         <Loader2 className="absolute -top-2 -right-2 w-6 h-6 text-primary animate-spin" strokeWidth={2} />
       </div>
 
-      <h3 className="text-xl font-heading font-bold text-foreground mb-2">Scanning Document</h3>
-      <p className="font-mono text-sm text-muted-foreground mb-8 max-w-xs truncate">{fileName}</p>
+      <h3 className="text-xl font-heading font-bold text-foreground mb-2">
+        Scanning {fileNames.length > 1 ? `${fileNames.length} Documents` : "Document"}
+      </h3>
+
+      <div className="font-mono text-sm text-muted-foreground mb-8 max-w-sm text-center space-y-0.5">
+        {fileNames.slice(0, 5).map((n) => (
+          <p key={n} className="truncate">{n}</p>
+        ))}
+        {fileNames.length > 5 && <p>+{fileNames.length - 5} more</p>}
+      </div>
 
       <div className="w-full max-w-sm">
         <Progress value={progress} className="h-1.5" />

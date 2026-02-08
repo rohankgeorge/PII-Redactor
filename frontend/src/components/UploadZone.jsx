@@ -10,7 +10,12 @@ export default function UploadZone({ onFileSelect }) {
   const onDragEnter = useCallback((e) => { prevent(e); setDragging(true); }, [prevent]);
   const onDragLeave = useCallback((e) => { prevent(e); setDragging(false); }, [prevent]);
   const onDrop = useCallback(
-    (e) => { prevent(e); setDragging(false); if (e.dataTransfer.files?.[0]) onFileSelect(e.dataTransfer.files[0]); },
+    (e) => {
+      prevent(e);
+      setDragging(false);
+      const files = e.dataTransfer.files;
+      if (files?.length) onFileSelect(files);
+    },
     [prevent, onFileSelect],
   );
 
@@ -22,8 +27,8 @@ export default function UploadZone({ onFileSelect }) {
           Redact Indian PII
         </h1>
         <p className="text-base sm:text-lg text-muted-foreground leading-relaxed">
-          Upload a Word document and instantly replace all Indian personally identifiable
-          information with categorized placeholders, making it safe for LLM processing.
+          Upload Word documents and instantly replace all Indian personally identifiable
+          information with categorized placeholders, making them safe for LLM processing.
         </p>
       </div>
 
@@ -56,18 +61,21 @@ export default function UploadZone({ onFileSelect }) {
           )}
         </div>
         <p className="font-heading font-bold text-foreground mb-1.5">
-          {dragging ? "Drop to scan" : "Drop your .docx here"}
+          {dragging ? "Drop to scan" : "Drop your documents here"}
         </p>
-        <p className="text-sm text-muted-foreground">or click to browse &middot; max 10 MB</p>
+        <p className="text-sm text-muted-foreground">
+          .doc &amp; .docx supported &middot; multiple files &middot; max 10 MB each
+        </p>
       </div>
 
       <input
         ref={inputRef}
         type="file"
-        accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        accept=".docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword"
+        multiple
         className="hidden"
         data-testid="file-input"
-        onChange={(e) => e.target.files?.[0] && onFileSelect(e.target.files[0])}
+        onChange={(e) => e.target.files?.length && onFileSelect(e.target.files)}
       />
     </div>
   );
