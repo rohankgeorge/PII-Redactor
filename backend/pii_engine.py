@@ -262,18 +262,10 @@ def _redact_names(text: str, tracker: PIITracker, ctx: str) -> str:
         return prefix + tracker.placeholder("INDIVIDUAL", name, ctx)
     text = CONTEXT_NAME_PATTERN.sub(_ctx_repl, text)
 
-    # 4c: Dictionary-based Indian names (single words)
-    if NAME_DICT_PATTERN:
-        def _dict_repl(m):
-            if _is_inside_placeholder(text, m.start()):
-                return m.group()
-            return tracker.placeholder("INDIVIDUAL", m.group(), ctx)
-        text = NAME_DICT_PATTERN.sub(_dict_repl, text)
-
-    # 4d: Consecutive capitalized words heuristic
+    # 4c: Consecutive capitalized words (catch multi-word names before single words)
     def _consec_repl(m):
         phrase = m.group().strip()
-        if "[REDACTED_" in phrase:
+        if _is_inside_placeholder(text, m.start()):
             return m.group()
         if phrase.lower() in _STOP_PHRASES:
             return m.group()
@@ -284,6 +276,14 @@ def _redact_names(text: str, tracker: PIITracker, ctx: str) -> str:
             return tracker.placeholder("INDIVIDUAL", phrase, ctx)
         return m.group()
     text = CONSEC_CAP_PATTERN.sub(_consec_repl, text)
+
+    # 4d: Dictionary-based Indian names (single words — catch remaining)
+    if NAME_DICT_PATTERN:
+        def _dict_repl(m):
+            if _is_inside_placeholder(text, m.start()):
+                return m.group()
+            return tracker.placeholder("INDIVIDUAL", m.group(), ctx)
+        text = NAME_DICT_PATTERN.sub(_dict_repl, text)
 
     return text
 
