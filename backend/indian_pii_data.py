@@ -3,6 +3,8 @@ Comprehensive Indian PII detection patterns and dictionaries.
 """
 import re
 
+from generated_indian_names import INDIAN_FIRST_NAMES, INDIAN_SURNAMES
+
 # ============================================================
 # REGEX PATTERNS  (ordered: most‑specific → least‑specific)
 # ============================================================
@@ -67,95 +69,6 @@ PII_REGEX_PATTERNS = [
     ("PIN_CODE", re.compile(r"\b[1-9]\d{5}\b")),
 ]
 
-
-# ============================================================
-# INDIAN FIRST NAMES  (Title Case, >= 3 chars to avoid noise)
-# ============================================================
-INDIAN_FIRST_NAMES: set[str] = {
-    # Male
-    "Aarav", "Aadhya", "Aakash", "Aayush", "Abhinav", "Abhishek", "Adithya", "Aditya",
-    "Ajay", "Ajit", "Akash", "Akhil", "Akshay", "Alistair", "Amaan", "Aman", "Amar", "Ameet",
-    "Amit", "Amitabh", "Amrish", "Anand", "Aniket", "Anil", "Anirban",
-    "Anish", "Ankit", "Ankur", "Anoop", "Anshul", "Anurag", "Apoorv", "Apurva",
-    "Arjun", "Arnab", "Arun", "Aryan", "Ashish", "Ashok", "Ashwin",
-    "Atharv", "Atul", "Avinash", "Babita", "Balaji", "Bhaskar", "Bhavesh", "Bikram",
-    "Chandan", "Chirag", "Darshan", "Deepak", "Devendra", "Dheeraj",
-    "Dhruv", "Dhwaj", "Dilip", "Dinesh", "Dipak", "Faisal", "Ganesh", "Gaurav", "Girish",
-    "Gopal", "Govind", "Gururaj", "Hardik", "Harish", "Hemant", "Hitesh",
-    "Indrajit", "Ishaan", "Jagdish", "Jatin", "Jayant", "Jayesh",
-    "Kailash", "Kamal", "Karan", "Karthik", "Kartik", "Kaushik", "Kishore",
-    "Krishna", "Kunal", "Kurien", "Lalit", "Lokesh", "Madhav", "Mahendra", "Mahesh",
-    "Mammen", "Manish", "Manoj", "Mathews", "Mayank", "Milind", "Mohit", "Mukesh", "Mukund",
-    "Murali", "Nagendra", "Nandan", "Narayan", "Narendra", "Naveen",
-    "Neeraj", "Nikhil", "Nilesh", "Nitin", "Omkar", "Pankaj", "Paresh",
-    "Pavan", "Pawan", "Poddar", "Pradeep", "Prakash", "Pranav", "Prashant", "Pratik",
-    "Praveen", "Prem", "Puneet", "Raghav", "Rahul", "Rajat", "Rajendra",
-    "Rajesh", "Rajiv", "Rakesh", "Raman", "Ramesh", "Ranveer", "Ravi",
-    "Rishabh", "Ritesh", "Rohit", "Roshan", "Sachin", "Sahil", "Samar",
-    "Sandeep", "Sanjay", "Sanjiv", "Santosh", "Saran", "Satish", "Saurabh",
-    "Sean", "Shankar", "Shashank", "Shekhar", "Shiv", "Shivam", "Shoaib",
-    "Shubham", "Siddharth", "Soham", "Sourabh", "Srikanth", "Subhash",
-    "Sudhir", "Sumit", "Sunil", "Suraj", "Suresh", "Swapnil", "Tanmay",
-    "Tarun", "Thekkethalackal", "Tushar", "Vanshay", "Varun", "Venkat", "Venkatesh", "Vijay", "Vikas",
-    "Vikram", "Vinay", "Vinod", "Vipin", "Vishal", "Vivek", "Yash",
-    "Yogesh",
-    # Female
-    "Aarti", "Aditi", "Aishwarya", "Akanksha", "Amrita", "Ananya", "Aneeta",
-    "Angira", "Anita", "Anjali", "Ankita", "Anupriya", "Anusha", "Aparna",
-    "Archana", "Aruna", "Bhavna", "Bhawana", "Chandni", "Chitra", "Deepa",
-    "Deepika", "Devi", "Devika", "Dimple", "Divya", "Durga", "Ekta",
-    "Gayatri", "Geeta", "Geetanjali", "Harini", "Hema", "Indira", "Ishita",
-    "Jaya", "Jayanthi", "Jyoti", "Jyotsna", "Kajal", "Kamini", "Kaveri",
-    "Kavita", "Kiran", "Komal", "Kriti", "Lakshmi", "Lata", "Latika",
-    "Madhuri", "Mamta", "Manisha", "Meena", "Meenakshi", "Meera",
-    "Megha", "Mira", "Mohini", "Mona", "Namita", "Nandini", "Neelam",
-    "Neena", "Neha", "Nidhi", "Nikita", "Nimisha", "Nisha", "Nita",
-    "Padma", "Pallavi", "Payal", "Pooja", "Poonam", "Prabhavati",
-    "Prachi", "Pragya", "Pratibha", "Preeti", "Prerna", "Priya",
-    "Priyanka", "Puja", "Radha", "Rajni", "Rakhi", "Rashmi", "Ratna",
-    "Rekha", "Renuka", "Richa", "Rina", "Ritu", "Riya", "Roshni",
-    "Rupali", "Sadhana", "Sandhya", "Sangeeta", "Sapna", "Sarita",
-    "Savita", "Seema", "Shabnam", "Shanti", "Shilpa", "Shipra", "Shivani",
-    "Shobha", "Shreya", "Shruti", "Simran", "Sita", "Smita", "Sneha",
-    "Sonal", "Sonali", "Sonia", "Suchitra", "Sudha", "Sujata", "Sulochana",
-    "Sunita", "Surbhi", "Surekha", "Sushma", "Swati", "Sweta", "Tanvi",
-    "Tara", "Usha", "Vandana", "Varsha", "Veena", "Vidya", "Yamini",
-}
-
-# ============================================================
-# INDIAN SURNAMES  (Title Case)
-# ============================================================
-INDIAN_SURNAMES: set[str] = {
-    "Acharya", "Agarwal", "Aggarwal", "Agrawal", "Ahuja", "Anand", "Ansari",
-    "Arora", "Babu", "Bagrecha", "Bajaj", "Bajpai", "Bala", "Balakrishnan",
-    "Banerjee", "Basu", "Bedi", "Bhandari", "Bhardwaj", "Bhat",
-    "Bhatia", "Bhatnagar", "Bhatt", "Bhattacharya", "Biswas", "Bose",
-    "Chakraborty", "Chandra", "Chatterjee", "Chattopadhyay", "Chauhan",
-    "Chawla", "Choudhary", "Choudhury", "Chopra", "Daga", "Damani", "Das",
-    "Dasgupta", "Deshpande", "Deshmukh", "Dewan", "Dhawan", "Dixit",
-    "Dubey", "Dutta", "Dwivedi", "Gaikwad", "Gandhi", "Ganguly",
-    "Ghosh", "Gill", "Goel", "Goenka", "Goswami", "Goyal", "Grover", "Gulati",
-    "Gupta", "Hegde", "Iyer", "Iyengar", "Jain", "Jadhav", "Jaiswal",
-    "Jha", "Johar", "Joshi", "Kadam", "Kacholia", "Kamath", "Kamboj", "Kapoor",
-    "Kashyap", "Kaul", "Kaur", "Khanna", "Khatri", "Kohli", "Kulkarni",
-    "Kumar", "Lahiri", "Lal", "Mahajan", "Maheswari", "Malhotra", "Malik", "Mane",
-    "Mathur", "Mehra", "Mehta", "Menon", "Mishra", "Misra", "Mitra",
-    "Modi", "Mohan", "Mukherjee", "Murthy", "Nag", "Naidu", "Naik",
-    "Nair", "Nambiar", "Nanda", "Narayan", "Nath", "Nayak", "Negi",
-    "Oberoi", "Padmanabhan", "Pal", "Pande", "Pandey", "Pandit", "Pant",
-    "Parikh", "Parmar", "Patel", "Pathak", "Patil", "Pawar", "Pillai",
-    "Prasad", "Purohit", "Raghavan", "Rai", "Raina", "Raja", "Rajan",
-    "Rajput", "Raju", "Ramachandran", "Raman", "Ramaswamy", "Rana",
-    "Ranganathan", "Rao", "Rathore", "Rawat", "Reddy", "Roy",
-    "Sachdev", "Saha", "Sahni", "Saini", "Saluja", "Saxena", "Sen",
-    "Sengupta", "Seth", "Sethi", "Shah", "Shankar", "Sharma", "Shastri",
-    "Shekhar", "Shinde", "Shrivastava", "Shukla", "Singh", "Sinha",
-    "Sodhi", "Soni", "Sood", "Sreedharan", "Sridhar", "Srinivas",
-    "Srinivasan", "Subramanian", "Suri", "Swamy", "Tandon", "Telang", "Thakkar",
-    "Thakur", "Tiwari", "Trehan", "Tripathi", "Trivedi", "Upadhyay",
-    "Varma", "Vashisht", "Vats", "Venkataraman", "Verma", "Vohra",
-    "Wadhwa", "Walia", "Yadav",
-}
 
 # ============================================================
 # INDIAN CITIES  (Title Case – top ~90 cities)
