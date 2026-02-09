@@ -298,11 +298,19 @@ _NAME_SEQUENCE_PATTERN = (
     r"){1,5})"
 )
 
+DEFINED_TERM_LEAD_IN = (
+    r"(?:(?i:(?:hereinafter|defined\s+as|referred\s+to\s+as|called)\s+)+)?"
+    r"(?:(?i:the)\s+)?"
+)
 DEFINED_TERM_QUOTED_PATTERN = re.compile(
-    r"(?:\(|,|–|-)\s*(?:the\s+)?[\"'“‘](?P<term>[A-Z][\w&\-]{1,40})[\"'”’]"
+    r"(?:\(|,|–|-)\s*"
+    + DEFINED_TERM_LEAD_IN
+    + r"[\"'“‘](?P<term>[A-Z][\w&\-]{1,40})[\"'”’]"
 )
 DEFINED_TERM_PLAIN_PATTERN = re.compile(
-    r"(?:\(|,|–|-)\s*(?:the\s+)?(?P<term>[A-Z][A-Za-z0-9&\-]{2,40})\b"
+    r"(?:\(|,|–|-)\s*"
+    + DEFINED_TERM_LEAD_IN
+    + r"(?P<term>[A-Z][A-Za-z0-9&\-]{2,40})\b"
 )
 
 # Stop words that look like capitalized phrases but aren't names
