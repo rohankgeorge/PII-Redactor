@@ -101,9 +101,11 @@ _ENTITY_SUFFIX = (
     r"Inc\.?|Corporation|Corp\.?|Co\.?|Foundation|Trust|Associates|"
     r"Enterprises|Industries|Services|Holdings|Group|Partners|Bank)"
 )
+_ENTITY_NAME_TOKEN = r"(?:[A-Z]\.|[A-Z][\w'\-]+)"
 ENTITY_PATTERN = re.compile(
     r"\b(?!(?:Mr|Mrs|Ms|Dr|Prof|Shri|Smt|Sri)\.?\s)"   # Exclude titles
-    r"([A-Z][\w]+(?:[\s&]+[A-Z][\w]+){0,6})\s+"
+    r"(" + _ENTITY_NAME_TOKEN + r"(?:[\s&]+" + _ENTITY_NAME_TOKEN + r"){0,6})"
+    r"(?:\s*\([^)]*\))?\s+"
     + r"(?i:" + _ENTITY_SUFFIX + r")" + r"\.?\b",       # Case-insensitive suffix only
 )
 
@@ -136,7 +138,7 @@ FULL_ADDRESS_PATTERN = re.compile(
     + r"\s*"
     + r"(?=[\w\s,./\-\'()\&\d:;]*,)"
     + r"[\w\s,./\-\'()\&\d:;]+?"
-    + r"[\s,\-–]*[1-9]\d{5}"
+    + r"[\s,\-–]*[1-9]\d{2}\s?\d{3}"
     + r"(?:\s*,?\s*India)?",
 )
 
@@ -163,7 +165,7 @@ GENERAL_ADDRESS_PATTERN = re.compile(
 ROAD_ADDRESS_PATTERN = re.compile(
     r"[A-Z][a-z]+(?:\s+[A-Za-z]+)*?\s+(?:Road|Main\s+Road|Street|Marg|Highway)"
     r"[\s,]+[\w][\w\s,./\-\'()\&\d:;]+?"
-    r"[\s,\-–]*[1-9]\d{5}"
+    r"[\s,\-–]*[1-9]\d{2}\s?\d{3}"
     r"(?:\s*,?\s*India)?",
 )
 
@@ -182,7 +184,7 @@ ROAD_ONLY_CONTEXT_PATTERN = re.compile(
 PLACE_ADDRESS_PATTERN = re.compile(
     r"[A-Z][a-z]+(?:\s+[A-Za-z][a-z]+)*,"    # Place name followed by comma
     r"[\w\s,./\-\'()\&\d:;]+?"                # Address body
-    r"[\s,\-–]*[1-9]\d{5}"                     # PIN code
+    r"[\s,\-–]*[1-9]\d{2}\s?\d{3}"             # PIN code
     r"(?:\s*,?\s*India)?",
 )
 
