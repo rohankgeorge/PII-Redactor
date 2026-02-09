@@ -793,9 +793,9 @@ class PiiRedactionAPITester:
         return self.tests_passed == self.tests_run
 
 def main():
-    print("Indian PII Redaction Tool - Backend API Testing - Iteration 3")
-    print("Focus: Testing new download architecture with file_id system")
-    print("New endpoints: /api/download/{file_id}, /api/audit-csv/{file_id}, /api/audit-csv-batch")
+    print("Indian PII Redaction Tool - Backend API Testing - Iteration 4")
+    print("Focus: Testing major redaction engine overhaul with PIITracker")
+    print("New Features: Entity names, Full addresses, Universal person names, Unique numbering")
     print("-" * 80)
     
     tester = PiiRedactionAPITester()
