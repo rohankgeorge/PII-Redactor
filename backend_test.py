@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Backend API Testing for Indian PII Redaction Tool - Iteration 3 Tests
-Focus: New download architecture with file_id system, server-side file serving, TTL expiry
-Tests: /api/download/{file_id}, /api/audit-csv/{file_id}, /api/audit-csv-batch endpoints
+Backend API Testing for Indian PII Redaction Tool - Iteration 4 Tests
+Focus: Major redaction engine overhaul with PIITracker and unique numbering
+Features: Entity names, Full addresses, Universal person names, Unique numbered variables
+Tests: /api/redact endpoint with comprehensive redaction patterns
 """
 
 import requests
