@@ -15,6 +15,11 @@ from indian_pii_data import (
     INDIAN_CITIES,
     INDIAN_STATES,
 )
+from global_pii_data import (
+    GLOBAL_POSTAL_CODE_PATTERNS,
+    US_ZIP_PATTERN,
+    UK_POSTCODE_PATTERN,
+)
 
 
 # ────────────────────────────────────────────────────────────
@@ -118,6 +123,11 @@ _ADDR_START = (
     r"(?:No\.?\s*|#\s*|Flat\s+(?:No\.?\s*)?|House\s+(?:No\.?\s*)?|"
     r"Plot\s+(?:No\.?\s*)?|Sy\.?\s*No\.?\s*|S\.?\s*No\.?\s*)?"
 )
+_STREET_SUFFIX = (
+    r"(?:Street|St\.?|Road|Rd\.?|Avenue|Ave\.?|Boulevard|Blvd\.?|Lane|Ln\.?|"
+    r"Drive|Dr\.?|Court|Ct\.?|Way|Parkway|Pkwy\.?|Place|Pl\.?|Terrace|Ter\.?)"
+)
+_GLOBAL_POSTAL_PATTERN = rf"(?:{US_ZIP_PATTERN}|{UK_POSTCODE_PATTERN})"
 FULL_ADDRESS_PATTERN = re.compile(
     r"(?:^|(?<=\s)|(?<=:)|(?<=\n))"          # Must start at boundary
     + _ADDR_START
@@ -128,6 +138,25 @@ FULL_ADDRESS_PATTERN = re.compile(
     + r"[\w\s,./\-\'()\&\d:;]+?"
     + r"[\s,\-–]*[1-9]\d{5}"
     + r"(?:\s*,?\s*India)?",
+)
+
+# General address: street + city + state + international postal code
+GENERAL_ADDRESS_PATTERN = re.compile(
+    r"(?:^|(?<=\s)|(?<=:)|(?<=\n))"
+    + _ADDR_START
+    + r"(?!(?:19|20)\d{2}\b)"
+    + r"[A-Za-z]?\d[\w/.\-]*"
+    + r"\s+"
+    + r"[\w\s.\-']+?\s+"
+    + _STREET_SUFFIX
+    + r"\s*,\s*"
+    + r"[A-Za-z][A-Za-z\s.'-]+"
+    + r"\s*,\s*"
+    + r"(?:[A-Z]{2}|[A-Za-z][A-Za-z\s.'-]+)"
+    + r"\s+"
+    + _GLOBAL_POSTAL_PATTERN
+    + r"(?:\s*,?\s*[A-Za-z][A-Za-z\s.'-]+)?",
+    re.IGNORECASE,
 )
 
 # Road-starting address (Magadi Main Road ... PIN)
@@ -287,6 +316,7 @@ _STOP_PHRASES = {
 # Redaction functions – ordered by priority
 # ────────────────────────────────────────────────────────────
 
+POSTAL_CODE_CATEGORIES = {"PIN_CODE", "US_ZIP_CODE", "UK_POSTCODE"}
 def _label_type_for_category(category: str) -> str:
     if category in {"PRIVATE_LIMITED", "LIMITED", "LLP", "ENTITY"}:
         return "Entity"
@@ -305,7 +335,12 @@ def _is_inside_placeholder(text: str, pos: int) -> bool:
 
 def _redact_addresses(text: str, tracker: PIITracker, ctx: str) -> str:
     """Pass 1: Detect and redact full address blocks (number → PIN → India)."""
-    for pattern in [FULL_ADDRESS_PATTERN, ROAD_ADDRESS_PATTERN]:
+    for pattern in [
+        FULL_ADDRESS_PATTERN,
+        ROAD_ADDRESS_PATTERN,
+        PLACE_ADDRESS_PATTERN,
+        GENERAL_ADDRESS_PATTERN,
+    ]:
         def _repl(m):
             if "[REDACTED_" in m.group():
                 return m.group()
@@ -392,7 +427,7 @@ def _redact_defined_terms(text: str, tracker: PIITracker, ctx: str) -> str:
 def _redact_pre_address_ids(text: str, tracker: PIITracker, ctx: str) -> str:
     """Pass 2: Detect specific IDs BEFORE addresses (Aadhaar, PAN, etc. — not PIN codes)."""
     for category, pattern in PII_REGEX_PATTERNS:
-        if category == "PIN_CODE":
+        if category in POSTAL_CODE_CATEGORIES:
             continue  # PIN codes handled after addresses
         def _repl(m, cat=category):
             if _is_inside_placeholder(text, m.start()):
@@ -404,8 +439,8 @@ def _redact_pre_address_ids(text: str, tracker: PIITracker, ctx: str) -> str:
 
 def _redact_post_address_ids(text: str, tracker: PIITracker, ctx: str) -> str:
     """Pass 4: Detect standalone PIN codes (those not already captured in addresses)."""
-    for category, pattern in PII_REGEX_PATTERNS:
-        if category != "PIN_CODE":
+    for category, pattern in PII_REGEX_PATTERNS + GLOBAL_POSTAL_CODE_PATTERNS:
+        if category not in POSTAL_CODE_CATEGORIES:
             continue
         def _repl(m, cat=category):
             if _is_inside_placeholder(text, m.start()):
