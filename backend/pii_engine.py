@@ -25,6 +25,8 @@ class PIITracker:
 
     def __init__(self):
         self._registry: Dict[str, Dict[str, int]] = {}
+        self._alias_registry: Dict[str, Dict[str, int]] = {}
+        self._alias_terms: Dict[str, str] = {}
         self.stats: Dict[str, int] = {}
         self.audit_log: list = []
 
@@ -49,6 +51,35 @@ class PIITracker:
             "location": context,
         })
         return ph
+
+    def register_alias(self, category: str, original: str, alias: str, context: str = "") -> str:
+        label_type = _label_type_for_category(category)
+        original_key = original.strip().lower()
+        alias_key = alias.strip().lower()
+        if not original_key or not alias_key:
+            return alias
+        if alias_key in self._alias_terms:
+            return self._alias_terms[alias_key]
+
+        if label_type not in self._alias_registry:
+            self._alias_registry[label_type] = {}
+
+        label_registry = self._alias_registry[label_type]
+        if original_key not in label_registry:
+            label_registry[original_key] = len(label_registry) + 1
+
+        label_num = label_registry[original_key]
+        label = f"{label_type} {label_num}"
+        self._alias_terms[alias_key] = label
+        self.audit_log.append({
+            "category": f"{label_type.upper()}_ALIAS",
+            "placeholder": label,
+            "location": context,
+        })
+        return label
+
+    def alias_label(self, term: str) -> str:
+        return self._alias_terms.get(term.strip().lower(), "")
 
     @property
     def total(self) -> int:
@@ -227,18 +258,40 @@ _NAME_SEQUENCE_PATTERN = (
     r"){1,5})"
 )
 
-# Consecutive capitalized words (2+ words, potential names)
-CONSEC_CAP_PATTERN = re.compile(r"\b" + _NAME_SEQUENCE_PATTERN + r"\b")
-
-CONTEXTUAL_CUE_PATTERN = re.compile(
-    r"(?:\b(?i:Party|Authorized Signatory|Witness|Mr\.?|Ms\.?|Mrs\.?|Dr\.?|"
-    r"Prof\.?|Shri\.?|Smt\.?|Sri\.?)\b(?:\s+(?:for|of|to|by))?\s*[:\-–]?\s*)"
-    + _NAME_SEQUENCE_PATTERN
+DEFINED_TERM_QUOTED_PATTERN = re.compile(
+    r"(?:\(|,|–|-)\s*(?:the\s+)?[\"'“‘](?P<term>[A-Z][\w&\-]{1,40})[\"'”’]"
 )
+DEFINED_TERM_PLAIN_PATTERN = re.compile(
+    r"(?:\(|,|–|-)\s*(?:the\s+)?(?P<term>[A-Z][A-Za-z0-9&\-]{2,40})\b"
+)
+
+# Stop words that look like capitalized phrases but aren't names
+_STOP_PHRASES = {
+    "first part", "second part", "third part", "fourth part",
+    "effective date", "closing date", "long stop date", "long-stop date",
+    "share transfer agreement", "share purchase price", "revenue share payment",
+    "non compete", "non disclosure", "non solicitation", "non disparagement",
+    "master settlement agreement", "technology transfer", "ip assignment",
+    "intellectual property", "first information report", "look out circular",
+    "legacy agreements", "settlement documents", "closing actions",
+    "material breach", "confidential information", "assigned ip",
+    "completion meeting", "conditions precedent", "mutual releases",
+    "governing law", "interim relief", "extended non compete",
+    "full and final", "covenant not to sue", "cross default",
+    "signing pack", "simultaneous exchange", "ancillary documents",
+    "share transfer forms", "resignation letters", "proof of release",
+    "joint other actions", "compliance checks", "quality assurance",
+}
 
 # ────────────────────────────────────────────────────────────
 # Redaction functions – ordered by priority
 # ────────────────────────────────────────────────────────────
+
+def _label_type_for_category(category: str) -> str:
+    if category in {"PRIVATE_LIMITED", "LIMITED", "LLP", "ENTITY"}:
+        return "Entity"
+    return "Individual"
+
 
 def _is_inside_placeholder(text: str, pos: int) -> bool:
     """Check if a position is inside an existing [REDACTED_...] tag."""
@@ -264,6 +317,31 @@ def _redact_addresses(text: str, tracker: PIITracker, ctx: str) -> str:
 def _redact_entities(text: str, tracker: PIITracker, ctx: str) -> str:
     """Pass 2: Detect entity names with corporate suffixes."""
     seen_short_names = []
+
+    def _capture_defined_terms(match):
+        full = match.group().strip().rstrip(".")
+        fl = full.lower().replace(".", "").replace(" ", "")
+        if "privatelimited" in fl or "pvtltd" in fl:
+            cat = "PRIVATE_LIMITED"
+        elif "llp" in fl:
+            cat = "LLP"
+        elif "limited" in fl or "ltd" in fl:
+            cat = "LIMITED"
+        else:
+            cat = "ENTITY"
+        tail = text[match.end():match.end() + 140]
+        for pattern in (DEFINED_TERM_QUOTED_PATTERN, DEFINED_TERM_PLAIN_PATTERN):
+            alias_match = pattern.search(tail)
+            if not alias_match:
+                continue
+            alias = alias_match.group("term")
+            tracker.register_alias(cat, full, alias, ctx)
+            break
+
+    for match in ENTITY_PATTERN.finditer(text):
+        if _is_inside_placeholder(text, match.start()):
+            continue
+        _capture_defined_terms(match)
 
     def _repl(m):
         full = m.group().strip().rstrip(".")
@@ -295,6 +373,19 @@ def _redact_entities(text: str, tracker: PIITracker, ctx: str) -> str:
                 return tracker.placeholder("ENTITY", _sn, ctx)
             text = re.sub(r"\b" + safe + r"\b", _sn_repl, text)
 
+    return text
+
+
+def _redact_defined_terms(text: str, tracker: PIITracker, ctx: str) -> str:
+    """Replace defined-term aliases with anonymized labels."""
+    for alias_key, label in tracker._alias_terms.items():
+        safe = re.escape(alias_key)
+        pattern = re.compile(r"\b" + safe + r"\b", re.IGNORECASE)
+        def _alias_repl(m, _label=label):
+            if _is_inside_placeholder(text, m.start()):
+                return m.group()
+            return _label
+        text = pattern.sub(_alias_repl, text)
     return text
 
 
@@ -427,6 +518,7 @@ def redact_text(
     text = _redact_pre_address_ids(text, tracker, context)
     text = _redact_addresses(text, tracker, context)
     text = _redact_entities(text, tracker, context)
+    text = _redact_defined_terms(text, tracker, context)
     text = _redact_post_address_ids(text, tracker, context)
     text = _redact_names(text, tracker, context, name_config)
     text = _redact_locations(text, tracker, context)
