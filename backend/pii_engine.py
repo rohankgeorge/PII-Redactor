@@ -2,8 +2,11 @@
 Comprehensive PII redaction engine with unique numbering.
 Detects: entity names, full addresses, universal person names, and all Indian IDs.
 """
+from dataclasses import dataclass
+import json
+import os
 import re
-from typing import Dict, List
+from typing import Dict, List, Set, Tuple
 
 from indian_pii_data import (
     PII_REGEX_PATTERNS,
@@ -11,6 +14,11 @@ from indian_pii_data import (
     INDIAN_SURNAMES,
     INDIAN_CITIES,
     INDIAN_STATES,
+)
+from global_pii_data import (
+    GLOBAL_POSTAL_CODE_PATTERNS,
+    US_ZIP_PATTERN,
+    UK_POSTCODE_PATTERN,
 )
 
 
@@ -22,6 +30,8 @@ class PIITracker:
 
     def __init__(self):
         self._registry: Dict[str, Dict[str, int]] = {}
+        self._alias_registry: Dict[str, Dict[str, int]] = {}
+        self._alias_terms: Dict[str, str] = {}
         self.stats: Dict[str, int] = {}
         self.audit_log: list = []
 
@@ -46,6 +56,35 @@ class PIITracker:
             "location": context,
         })
         return ph
+
+    def register_alias(self, category: str, original: str, alias: str, context: str = "") -> str:
+        label_type = _label_type_for_category(category)
+        original_key = original.strip().lower()
+        alias_key = alias.strip().lower()
+        if not original_key or not alias_key:
+            return alias
+        if alias_key in self._alias_terms:
+            return self._alias_terms[alias_key]
+
+        if label_type not in self._alias_registry:
+            self._alias_registry[label_type] = {}
+
+        label_registry = self._alias_registry[label_type]
+        if original_key not in label_registry:
+            label_registry[original_key] = len(label_registry) + 1
+
+        label_num = label_registry[original_key]
+        label = f"{label_type} {label_num}"
+        self._alias_terms[alias_key] = label
+        self.audit_log.append({
+            "category": f"{label_type.upper()}_ALIAS",
+            "placeholder": label,
+            "location": context,
+        })
+        return label
+
+    def alias_label(self, term: str) -> str:
+        return self._alias_terms.get(term.strip().lower(), "")
 
     @property
     def total(self) -> int:
@@ -84,6 +123,11 @@ _ADDR_START = (
     r"(?:No\.?\s*|#\s*|Flat\s+(?:No\.?\s*)?|House\s+(?:No\.?\s*)?|"
     r"Plot\s+(?:No\.?\s*)?|Sy\.?\s*No\.?\s*|S\.?\s*No\.?\s*)?"
 )
+_STREET_SUFFIX = (
+    r"(?:Street|St\.?|Road|Rd\.?|Avenue|Ave\.?|Boulevard|Blvd\.?|Lane|Ln\.?|"
+    r"Drive|Dr\.?|Court|Ct\.?|Way|Parkway|Pkwy\.?|Place|Pl\.?|Terrace|Ter\.?)"
+)
+_GLOBAL_POSTAL_PATTERN = rf"(?:{US_ZIP_PATTERN}|{UK_POSTCODE_PATTERN})"
 FULL_ADDRESS_PATTERN = re.compile(
     r"(?:^|(?<=\s)|(?<=:)|(?<=\n))"          # Must start at boundary
     + _ADDR_START
@@ -96,12 +140,42 @@ FULL_ADDRESS_PATTERN = re.compile(
     + r"(?:\s*,?\s*India)?",
 )
 
+# General address: street + city + state + international postal code
+GENERAL_ADDRESS_PATTERN = re.compile(
+    r"(?:^|(?<=\s)|(?<=:)|(?<=\n))"
+    + _ADDR_START
+    + r"(?!(?:19|20)\d{2}\b)"
+    + r"[A-Za-z]?\d[\w/.\-]*"
+    + r"\s+"
+    + r"[\w\s.\-']+?\s+"
+    + _STREET_SUFFIX
+    + r"\s*,\s*"
+    + r"[A-Za-z][A-Za-z\s.'-]+"
+    + r"\s*,\s*"
+    + r"(?:[A-Z]{2}|[A-Za-z][A-Za-z\s.'-]+)"
+    + r"\s+"
+    + _GLOBAL_POSTAL_PATTERN
+    + r"(?:\s*,?\s*[A-Za-z][A-Za-z\s.'-]+)?",
+    re.IGNORECASE,
+)
+
 # Road-starting address (Magadi Main Road ... PIN)
 ROAD_ADDRESS_PATTERN = re.compile(
     r"[A-Z][a-z]+(?:\s+[A-Za-z]+)*?\s+(?:Road|Main\s+Road|Street|Marg|Highway)"
     r"[\s,]+[\w][\w\s,./\-\'()\&\d:;]+?"
     r"[\s,\-–]*[1-9]\d{5}"
     r"(?:\s*,?\s*India)?",
+)
+
+# Standalone road/street line guarded by address cues or list markers
+ROAD_ONLY_CONTEXT_PATTERN = re.compile(
+    r"(?im)"
+    r"(?P<prefix>(?:^|\n)\s*(?:(?:[A-Z]|[0-9])\.\s*)?"
+    r"(?:(?:residing\s+at|address|residence|located\s+at)\s*[:\-–]\s*)?)"
+    r"(?P<road>[A-Za-z0-9][\w.'-]*(?:\s+[A-Za-z0-9][\w.'-]*)*\s+"
+    + _STREET_SUFFIX
+    + r")"
+    r"(?=\s*(?:$|\n|[,;]))"
 )
 
 # Location-based address (named place, ... PIN)
@@ -136,6 +210,71 @@ CONTEXT_NAME_PATTERN = re.compile(
     r")*)",
 )
 
+@dataclass(frozen=True)
+class NameDetectionConfig:
+    use_title: bool = True
+    use_context_label: bool = True
+    use_contextual_cues: bool = True
+    use_consecutive_caps: bool = True
+    use_dictionary: bool = True
+
+
+_DEFAULT_STOP_PHRASES = {
+    "first part", "second part", "third part", "fourth part",
+    "effective date", "closing date", "long stop date", "long-stop date",
+    "share transfer agreement", "share purchase price", "revenue share payment",
+    "non compete", "non disclosure", "non solicitation", "non disparagement",
+    "master settlement agreement", "technology transfer", "ip assignment",
+    "intellectual property", "first information report", "look out circular",
+    "legacy agreements", "settlement documents", "closing actions",
+    "material breach", "confidential information", "assigned ip",
+    "completion meeting", "conditions precedent", "mutual releases",
+    "governing law", "interim relief", "extended non compete",
+    "full and final", "covenant not to sue", "cross default",
+    "signing pack", "simultaneous exchange", "ancillary documents",
+    "share transfer forms", "resignation letters", "proof of release",
+    "joint other actions", "compliance checks", "quality assurance",
+}
+
+_DEFAULT_FALSE_POSITIVE_WORDS = {
+    "agreement", "annexure", "appendix", "article", "act", "schedule",
+    "section", "clause", "exhibit", "recital", "party",
+}
+
+
+def _load_name_detection_data() -> Tuple[Set[str], Set[str], NameDetectionConfig]:
+    stop_phrases = {phrase.lower() for phrase in _DEFAULT_STOP_PHRASES}
+    false_positive_words = {word.lower() for word in _DEFAULT_FALSE_POSITIVE_WORDS}
+    config = NameDetectionConfig()
+    data_path = os.path.join(os.path.dirname(__file__), "data", "stop_phrases.json")
+    try:
+        with open(data_path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except FileNotFoundError:
+        return stop_phrases, false_positive_words, config
+    except json.JSONDecodeError:
+        return stop_phrases, false_positive_words, config
+
+    for phrase in data.get("stop_phrases", []):
+        if isinstance(phrase, str):
+            stop_phrases.add(phrase.lower().strip())
+    for word in data.get("false_positive_name_words", []):
+        if isinstance(word, str):
+            false_positive_words.add(word.lower().strip())
+    config_data = data.get("name_detection", {})
+    if isinstance(config_data, dict):
+        config = NameDetectionConfig(
+            use_title=config_data.get("use_title", config.use_title),
+            use_context_label=config_data.get("use_context_label", config.use_context_label),
+            use_contextual_cues=config_data.get("use_contextual_cues", config.use_contextual_cues),
+            use_consecutive_caps=config_data.get("use_consecutive_caps", config.use_consecutive_caps),
+            use_dictionary=config_data.get("use_dictionary", config.use_dictionary),
+        )
+    return stop_phrases, false_positive_words, config
+
+
+_STOP_PHRASES, _FALSE_POSITIVE_NAME_WORDS, _NAME_DETECTION_CONFIG = _load_name_detection_data()
+
 # Build massive name set and pattern
 _ALL_NAMES = sorted(INDIAN_FIRST_NAMES | INDIAN_SURNAMES, key=len, reverse=True)
 _NAME_ALTERNATION = "|".join(re.escape(n) for n in _ALL_NAMES) if _ALL_NAMES else None
@@ -150,14 +289,28 @@ LOCATION_DICT_PATTERN = re.compile(
     r"\b(" + _LOC_ALTERNATION + r")\b", re.IGNORECASE
 ) if _LOC_ALTERNATION else None
 
-# Consecutive capitalized words (2+ words, potential names)
-CONSEC_CAP_PATTERN = re.compile(
-    r"\b([A-Z][a-z]{1,20}(?:"
+_NAME_SEQUENCE_PATTERN = (
+    r"([A-Z][a-z]{1,20}(?:"
     r"\s+[A-Z]'[A-Z][a-z]+"        # D'Rozario
     r"|\s+[A-Z]\s+[A-Z][a-z]+"     # D Rozario
     r"|\s+[A-Z][a-z]{1,20}"        # Regular name word
     r"|\s+[A-Z]\."                  # Initial with dot
-    r"){1,5})\b"
+    r"){1,5})"
+)
+
+DEFINED_TERM_LEAD_IN = (
+    r"(?:(?i:(?:hereinafter|defined\s+as|referred\s+to\s+as|called)\s+)+)?"
+    r"(?:(?i:the)\s+)?"
+)
+DEFINED_TERM_QUOTED_PATTERN = re.compile(
+    r"(?:\(|,|–|-)\s*"
+    + DEFINED_TERM_LEAD_IN
+    + r"[\"'“‘](?P<term>[A-Z][\w&\-]{1,40})[\"'”’]"
+)
+DEFINED_TERM_PLAIN_PATTERN = re.compile(
+    r"(?:\(|,|–|-)\s*"
+    + DEFINED_TERM_LEAD_IN
+    + r"(?P<term>[A-Z][A-Za-z0-9&\-]{2,40})\b"
 )
 
 # Stop words that look like capitalized phrases but aren't names
@@ -182,6 +335,13 @@ _STOP_PHRASES = {
 # Redaction functions – ordered by priority
 # ────────────────────────────────────────────────────────────
 
+POSTAL_CODE_CATEGORIES = {"PIN_CODE", "US_ZIP_CODE", "UK_POSTCODE"}
+def _label_type_for_category(category: str) -> str:
+    if category in {"PRIVATE_LIMITED", "LIMITED", "LLP", "ENTITY"}:
+        return "Entity"
+    return "Individual"
+
+
 def _is_inside_placeholder(text: str, pos: int) -> bool:
     """Check if a position is inside an existing [REDACTED_...] tag."""
     before = text[:pos]
@@ -194,7 +354,19 @@ def _is_inside_placeholder(text: str, pos: int) -> bool:
 
 def _redact_addresses(text: str, tracker: PIITracker, ctx: str) -> str:
     """Pass 1: Detect and redact full address blocks (number → PIN → India)."""
-    for pattern in [FULL_ADDRESS_PATTERN, ROAD_ADDRESS_PATTERN]:
+    def _road_only_repl(m):
+        road = m.group("road")
+        if "[REDACTED_" in road or _is_inside_placeholder(text, m.start("road")):
+            return m.group()
+        return f"{m.group('prefix')}{tracker.placeholder('ADDRESS', road, ctx)}"
+
+    text = ROAD_ONLY_CONTEXT_PATTERN.sub(_road_only_repl, text)
+    for pattern in [
+        FULL_ADDRESS_PATTERN,
+        ROAD_ADDRESS_PATTERN,
+        PLACE_ADDRESS_PATTERN,
+        GENERAL_ADDRESS_PATTERN,
+    ]:
         def _repl(m):
             if "[REDACTED_" in m.group():
                 return m.group()
@@ -206,6 +378,31 @@ def _redact_addresses(text: str, tracker: PIITracker, ctx: str) -> str:
 def _redact_entities(text: str, tracker: PIITracker, ctx: str) -> str:
     """Pass 2: Detect entity names with corporate suffixes."""
     seen_short_names = []
+
+    def _capture_defined_terms(match):
+        full = match.group().strip().rstrip(".")
+        fl = full.lower().replace(".", "").replace(" ", "")
+        if "privatelimited" in fl or "pvtltd" in fl:
+            cat = "PRIVATE_LIMITED"
+        elif "llp" in fl:
+            cat = "LLP"
+        elif "limited" in fl or "ltd" in fl:
+            cat = "LIMITED"
+        else:
+            cat = "ENTITY"
+        tail = text[match.end():match.end() + 140]
+        for pattern in (DEFINED_TERM_QUOTED_PATTERN, DEFINED_TERM_PLAIN_PATTERN):
+            alias_match = pattern.search(tail)
+            if not alias_match:
+                continue
+            alias = alias_match.group("term")
+            tracker.register_alias(cat, full, alias, ctx)
+            break
+
+    for match in ENTITY_PATTERN.finditer(text):
+        if _is_inside_placeholder(text, match.start()):
+            continue
+        _capture_defined_terms(match)
 
     def _repl(m):
         full = m.group().strip().rstrip(".")
@@ -240,10 +437,23 @@ def _redact_entities(text: str, tracker: PIITracker, ctx: str) -> str:
     return text
 
 
+def _redact_defined_terms(text: str, tracker: PIITracker, ctx: str) -> str:
+    """Replace defined-term aliases with anonymized labels."""
+    for alias_key, label in tracker._alias_terms.items():
+        safe = re.escape(alias_key)
+        pattern = re.compile(r"\b" + safe + r"\b", re.IGNORECASE)
+        def _alias_repl(m, _label=label):
+            if _is_inside_placeholder(text, m.start()):
+                return m.group()
+            return _label
+        text = pattern.sub(_alias_repl, text)
+    return text
+
+
 def _redact_pre_address_ids(text: str, tracker: PIITracker, ctx: str) -> str:
     """Pass 2: Detect specific IDs BEFORE addresses (Aadhaar, PAN, etc. — not PIN codes)."""
     for category, pattern in PII_REGEX_PATTERNS:
-        if category == "PIN_CODE":
+        if category in POSTAL_CODE_CATEGORIES:
             continue  # PIN codes handled after addresses
         def _repl(m, cat=category):
             if _is_inside_placeholder(text, m.start()):
@@ -255,8 +465,8 @@ def _redact_pre_address_ids(text: str, tracker: PIITracker, ctx: str) -> str:
 
 def _redact_post_address_ids(text: str, tracker: PIITracker, ctx: str) -> str:
     """Pass 4: Detect standalone PIN codes (those not already captured in addresses)."""
-    for category, pattern in PII_REGEX_PATTERNS:
-        if category != "PIN_CODE":
+    for category, pattern in PII_REGEX_PATTERNS + GLOBAL_POSTAL_CODE_PATTERNS:
+        if category not in POSTAL_CODE_CATEGORIES:
             continue
         def _repl(m, cat=category):
             if _is_inside_placeholder(text, m.start()):
@@ -266,43 +476,71 @@ def _redact_post_address_ids(text: str, tracker: PIITracker, ctx: str) -> str:
     return text
 
 
-def _redact_names(text: str, tracker: PIITracker, ctx: str) -> str:
+def _is_false_positive_name(phrase: str) -> bool:
+    lowered = phrase.lower().strip()
+    if lowered in _STOP_PHRASES:
+        return True
+    for word in re.findall(r"[a-z']+", lowered):
+        if word in _FALSE_POSITIVE_NAME_WORDS:
+            return True
+    return False
+
+
+def _redact_names(
+    text: str,
+    tracker: PIITracker,
+    ctx: str,
+    config: NameDetectionConfig = _NAME_DETECTION_CONFIG,
+) -> str:
     """Pass 4: Detect person names (titles, context, dictionary, heuristic)."""
 
     # 4a: Title-based names (Mr./Mrs./Dr. + following name)
-    def _title_repl(m):
-        if _is_inside_placeholder(text, m.start()):
-            return m.group()
-        # Track by name-only (group 1) so "Mr. X" and "X" get the same number
-        return tracker.placeholder("INDIVIDUAL", m.group(1).strip(), ctx)
-    text = TITLE_NAME_PATTERN.sub(_title_repl, text)
+    if config.use_title:
+        def _title_repl(m):
+            if _is_inside_placeholder(text, m.start()):
+                return m.group()
+            # Track by name-only (group 1) so "Mr. X" and "X" get the same number
+            return tracker.placeholder("INDIVIDUAL", m.group(1).strip(), ctx)
+        text = TITLE_NAME_PATTERN.sub(_title_repl, text)
 
     # 4b: Context-based names ("Name:" patterns)
-    def _ctx_repl(m):
-        name = m.group(1).strip()
-        if _is_inside_placeholder(text, m.start()) or len(name) < 3:
-            return m.group()
-        prefix = m.group()[:m.group().index(name)]
-        return prefix + tracker.placeholder("INDIVIDUAL", name, ctx)
-    text = CONTEXT_NAME_PATTERN.sub(_ctx_repl, text)
+    if config.use_context_label:
+        def _ctx_repl(m):
+            name = m.group(1).strip()
+            if _is_inside_placeholder(text, m.start()) or len(name) < 3:
+                return m.group()
+            prefix = m.group()[:m.group().index(name)]
+            return prefix + tracker.placeholder("INDIVIDUAL", name, ctx)
+        text = CONTEXT_NAME_PATTERN.sub(_ctx_repl, text)
+
+    # 4c: Contextual cue names ("Party:", "Authorized Signatory:", "Witness:")
+    if config.use_contextual_cues:
+        def _cue_repl(m):
+            phrase = m.group(1).strip()
+            if _is_inside_placeholder(text, m.start()) or _is_false_positive_name(phrase):
+                return m.group()
+            prefix = m.group()[:m.group().index(phrase)]
+            return prefix + tracker.placeholder("INDIVIDUAL", phrase, ctx)
+        text = CONTEXTUAL_CUE_PATTERN.sub(_cue_repl, text)
 
     # 4c: Consecutive capitalized words (catch multi-word names before single words)
-    def _consec_repl(m):
-        phrase = m.group().strip()
-        if _is_inside_placeholder(text, m.start()):
+    if config.use_consecutive_caps:
+        def _consec_repl(m):
+            phrase = m.group(1).strip()
+            if _is_inside_placeholder(text, m.start()):
+                return m.group()
+            if _is_false_positive_name(phrase):
+                return m.group()
+            # Check if at least one word is a known name
+            words = phrase.split()
+            has_known = any(w in INDIAN_FIRST_NAMES or w in INDIAN_SURNAMES for w in words)
+            if has_known and len(words) >= 2:
+                return tracker.placeholder("INDIVIDUAL", phrase, ctx)
             return m.group()
-        if phrase.lower() in _STOP_PHRASES:
-            return m.group()
-        # Check if at least one word is a known name
-        words = phrase.split()
-        has_known = any(w in INDIAN_FIRST_NAMES or w in INDIAN_SURNAMES for w in words)
-        if has_known and len(words) >= 2:
-            return tracker.placeholder("INDIVIDUAL", phrase, ctx)
-        return m.group()
-    text = CONSEC_CAP_PATTERN.sub(_consec_repl, text)
+        text = CONSEC_CAP_PATTERN.sub(_consec_repl, text)
 
     # 4d: Dictionary-based Indian names (single words — catch remaining)
-    if NAME_DICT_PATTERN:
+    if config.use_dictionary and NAME_DICT_PATTERN:
         def _dict_repl(m):
             if _is_inside_placeholder(text, m.start()):
                 return m.group()
@@ -328,7 +566,12 @@ def _redact_locations(text: str, tracker: PIITracker, ctx: str) -> str:
 # Main entry point
 # ────────────────────────────────────────────────────────────
 
-def redact_text(text: str, tracker: PIITracker, context: str = "") -> str:
+def redact_text(
+    text: str,
+    tracker: PIITracker,
+    context: str = "",
+    name_config: NameDetectionConfig = _NAME_DETECTION_CONFIG,
+) -> str:
     """Apply all redaction passes in priority order."""
     if not text or not text.strip():
         return text
@@ -336,8 +579,9 @@ def redact_text(text: str, tracker: PIITracker, context: str = "") -> str:
     text = _redact_pre_address_ids(text, tracker, context)
     text = _redact_addresses(text, tracker, context)
     text = _redact_entities(text, tracker, context)
+    text = _redact_defined_terms(text, tracker, context)
     text = _redact_post_address_ids(text, tracker, context)
-    text = _redact_names(text, tracker, context)
+    text = _redact_names(text, tracker, context, name_config)
     text = _redact_locations(text, tracker, context)
 
     return text
