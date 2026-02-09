@@ -1,39 +1,41 @@
 # RedactAI - Indian PII Redaction Tool
 
 ## Problem Statement
-Build a redaction tool that receives Word documents (.docx/.doc), identifies Indian PII using rule-based detection, and replaces them with categorized placeholders. Designed to prepare documents for LLM processing.
+Build a redaction tool that receives Word documents (.docx/.doc), identifies all PII using rule-based detection, and replaces with uniquely numbered categorized placeholders. Designed to prepare documents for LLM processing.
 
 ## Architecture
 - **Frontend**: React + Tailwind + Shadcn/UI (dark theme)
-- **Backend**: FastAPI with python-docx + antiword for document processing
-- **Database**: MongoDB (template requirement, no PII storage)
+- **Backend**: FastAPI + python-docx + antiword + pii_engine.py (multi-pass redaction)
+- **Database**: MongoDB (template, no PII storage)
+- **Key file**: `/app/backend/pii_engine.py` - PIITracker + 6-pass redaction engine
 
-## What's Been Implemented (Feb 8, 2026)
+## What's Been Implemented
 
-### Phase 1 (Initial Build)
-- Full backend with 16 Indian PII regex patterns + name/location dictionaries
-- Drag & drop file upload with .docx validation
-- Processing state with scan animation
-- Results panel with bento grid stats by category
-- Download redacted document, Start Over flow
-- PII Types dropdown in header, Privacy footer
-- Dark professional theme
+### Phase 1: Initial Build (Feb 8, 2026)
+- Basic PII detection (16 categories)
+- Upload, processing, results, download flow
+- Dark professional UI
 
-### Phase 2 (Feature Additions)
-- **Download fix**: Added setTimeout before URL revocation for reliable downloads
-- **PII Audit Report**: CSV export with per-detection log, summary, and category breakdown
-- **.doc support**: Legacy .doc files handled via antiword + plaintext fallback
-- **Batch upload**: Multiple files processed in parallel via Promise.allSettled
-- **Per-file breakdown**: Individual download buttons and PII counts per file
-- **Combined stats**: Aggregated stats across all uploaded documents
+### Phase 2: Feature Additions
+- Download fix (iframe-based server-side downloads)
+- PII Audit Report (CSV export)
+- .doc legacy format support (antiword)
+- Batch multi-file upload
+
+### Phase 3: Redaction Engine Overhaul (Current)
+- **PIITracker class**: Unique numbered placeholders per category ([REDACTED_INDIVIDUAL1], [REDACTED_ADDRESS2], etc.)
+- **Entity name detection**: Private Limited, Pvt Ltd, LLP, Co, Ltd, Corporation + standalone entity references
+- **Full address redaction**: Complete address blocks (number → PIN code) in single placeholder
+- **Universal person names**: Title-based (Mr./Mrs./Dr.), context-based (Name:), consecutive capitalized words, dictionary
+- **Handles**: D'Rozario, initials (N.), non-Indian names
+- **Same person = same number**: "Mr. Dhwaj Bagrecha" and "Dhwaj Bagrecha" get same [REDACTED_INDIVIDUAL_] number
+- **Processing order**: IDs → Addresses → Entities → PIN codes → Names → Locations
+- **Year exclusion**: "2013" in "Companies Act, 2013" not confused with address
 
 ## Test Results
-- Backend: 100% (7/7 tests)
-- Frontend: 100% (all features)
-- Integration: 100%
+- All tests pass (100% frontend, integration, new features)
 
 ## Backlog
-- P1: Add preview of redacted text before download
-- P2: Custom PII category toggle (enable/disable specific types)
-- P2: Drag-to-reorder PII priority
-- P3: Browser-only mode (WebAssembly for fully client-side processing)
+- P1: Entity aliasing ("NeoSan Private Limited" and "NeoSan Pvt Ltd" → same number)
+- P2: Redacted text preview before download
+- P2: Custom PII category toggle
