@@ -8,6 +8,11 @@ from generated_indian_names import INDIAN_FIRST_NAMES, INDIAN_SURNAMES
 # ============================================================
 # REGEX PATTERNS  (ordered: most‑specific → least‑specific)
 # ============================================================
+MONTH_PATTERN = (
+    r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|"
+    r"Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+)
+
 PII_REGEX_PATTERNS = [
     # GST Number  – 15 chars, embeds PAN; must come first
     ("GST_NUMBER", re.compile(r"\b\d{2}[A-Z]{5}\d{4}[A-Z]\d[Z][A-Z\d]\b")),
@@ -46,7 +51,11 @@ PII_REGEX_PATTERNS = [
     # Date of Birth – with context
     ("DATE_OF_BIRTH", re.compile(
         r"(?:D\.?O\.?B\.?|[Dd]ate\s+of\s+[Bb]irth|[Bb]orn\s+(?:on|in)|[Bb]irth\s*[Dd]ate)"
-        r"[\s:.\-]*\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}",
+        r"[\s:.\-]*\d{1,2}(?:st|nd|rd|th)?(?:"
+        r"[/.\-]\d{1,2}[/.\-]\d{2,4}"
+        r"|[\s\-]+"
+        + MONTH_PATTERN +
+        r"(?:,?[\s\-]+)\d{2,4})",
     )),
 
     # Email Address
