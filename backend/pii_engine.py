@@ -298,6 +298,22 @@ _NAME_SEQUENCE_PATTERN = (
     r"){1,5})"
 )
 
+# Consecutive capitalized words (2+ words, potential names)
+CONSEC_CAP_PATTERN = re.compile(r"\b" + _NAME_SEQUENCE_PATTERN + r"\b")
+
+# Contextual cue pattern - names after labels like "Party:", "Authorized Signatory:", "Witness:"
+_CONTEXTUAL_CUES = (
+    r"(?:Party|Authorized\s+Signatory|Signatory|Witness|Director|"
+    r"Representative|Guarantor|Nominee|Beneficiary|Executor|"
+    r"Trustee|Partner|Promoter|Shareholder|Assignee|Assignor|"
+    r"Licensee|Licensor|Lessee|Lessor|Tenant|Landlord|Seller|Buyer|"
+    r"Vendor|Purchaser|Borrower|Lender|Debtor|Creditor|"
+    r"Complainant|Respondent|Petitioner|Appellant|Plaintiff|Defendant)"
+)
+CONTEXTUAL_CUE_PATTERN = re.compile(
+    _CONTEXTUAL_CUES + r"\s*[:\-–]\s*" + _NAME_SEQUENCE_PATTERN,
+)
+
 DEFINED_TERM_LEAD_IN = (
     r"(?:(?i:(?:hereinafter|defined\s+as|referred\s+to\s+as|called)\s+)+)?"
     r"(?:(?i:the)\s+)?"
