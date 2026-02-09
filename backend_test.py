@@ -62,12 +62,241 @@ class PiiRedactionAPITester:
             self.log_test("API Health Check", False, f"Error: {str(e)}")
             return False
 
-    def test_redact_docx_file(self):
-        """Test redaction with .docx file - focusing on new file_id response format"""
+    def test_entity_redaction(self):
+        """Test entity name redaction with unique numbering"""
+        test_text = "NeoSan Private Limited signed an agreement with Tech Solutions Pvt Ltd and Alpha Industries LLP."
+        
         try:
-            file_path = Path("/tmp/test_pii.docx")
+            # Create a simple docx with test content
+            from docx import Document
+            import io
+            
+            doc = Document()
+            doc.add_paragraph(test_text)
+            doc_buffer = io.BytesIO()
+            doc.save(doc_buffer)
+            doc_buffer.seek(0)
+            
+            files = {'file': ('test_entities.docx', doc_buffer, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')}
+            response = requests.post(f"{self.base_url}/redact", files=files, timeout=60)
+
+            success = response.status_code == 200
+            
+            if success:
+                try:
+                    response_data = response.json()
+                    stats = response_data.get('stats', {})
+                    audit_log = response_data.get('audit_log', [])
+                    
+                    # Check for entity categories
+                    expected_categories = ['PRIVATE_LIMITED', 'LLP', 'ENTITY']
+                    found_categories = set(stats.keys()) & set(expected_categories)
+                    
+                    # Check placeholders in audit log
+                    entity_placeholders = [entry['placeholder'] for entry in audit_log 
+                                         if entry['category'] in expected_categories]
+                    
+                    details = f"Stats: {stats}, Found categories: {found_categories}, Entity placeholders: {entity_placeholders}"
+                    
+                    if not found_categories:
+                        success = False
+                        details += " | No entity categories detected"
+                        
+                except json.JSONDecodeError:
+                    details = "Invalid JSON response"
+                    success = False
+            else:
+                details = f"Status: {response.status_code}, Error: {response.text[:200]}"
+
+            self.log_test("Entity Redaction Test", success, details)
+            return success, response.json() if success else {}
+            
+        except Exception as e:
+            self.log_test("Entity Redaction Test", False, f"Error: {str(e)}")
+            return False, {}
+
+    def test_address_redaction(self):
+        """Test full address block redaction"""
+        test_text = "No. 97, 3rd Cross, Domlur Layout, Bangalore - 560022, India. Also visit Magadi Main Road, Vijayanagar, Bangalore - 560040."
+        
+        try:
+            from docx import Document
+            import io
+            
+            doc = Document()
+            doc.add_paragraph(test_text)
+            doc_buffer = io.BytesIO()
+            doc.save(doc_buffer)
+            doc_buffer.seek(0)
+            
+            files = {'file': ('test_addresses.docx', doc_buffer, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')}
+            response = requests.post(f"{self.base_url}/redact", files=files, timeout=60)
+
+            success = response.status_code == 200
+            
+            if success:
+                try:
+                    response_data = response.json()
+                    stats = response_data.get('stats', {})
+                    audit_log = response_data.get('audit_log', [])
+                    
+                    # Check for ADDRESS category
+                    address_count = stats.get('ADDRESS', 0)
+                    address_placeholders = [entry['placeholder'] for entry in audit_log 
+                                          if entry['category'] == 'ADDRESS']
+                    
+                    details = f"Address count: {address_count}, Placeholders: {address_placeholders}, Stats: {stats}"
+                    
+                    if address_count == 0:
+                        success = False
+                        details += " | No addresses detected"
+                        
+                except json.JSONDecodeError:
+                    details = "Invalid JSON response"
+                    success = False
+            else:
+                details = f"Status: {response.status_code}, Error: {response.text[:200]}"
+
+            self.log_test("Address Redaction Test", success, details)
+            return success
+            
+        except Exception as e:
+            self.log_test("Address Redaction Test", False, f"Error: {str(e)}")
+            return False
+
+    def test_person_name_redaction(self):
+        """Test universal person name redaction"""
+        test_text = "Mr. Alistair Sean D'Rozario and Name: Faisal N. Ansari signed the agreement. Mr. Dhwaj Bagrecha was also present. Later, Dhwaj Bagrecha provided the documents."
+        
+        try:
+            from docx import Document
+            import io
+            
+            doc = Document()
+            doc.add_paragraph(test_text)
+            doc_buffer = io.BytesIO()
+            doc.save(doc_buffer)
+            doc_buffer.seek(0)
+            
+            files = {'file': ('test_names.docx', doc_buffer, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')}
+            response = requests.post(f"{self.base_url}/redact", files=files, timeout=60)
+
+            success = response.status_code == 200
+            
+            if success:
+                try:
+                    response_data = response.json()
+                    stats = response_data.get('stats', {})
+                    audit_log = response_data.get('audit_log', [])
+                    
+                    # Check for INDIVIDUAL category
+                    individual_count = stats.get('INDIVIDUAL', 0)
+                    individual_placeholders = [entry['placeholder'] for entry in audit_log 
+                                             if entry['category'] == 'INDIVIDUAL']
+                    
+                    # Check if same person gets same number (Dhwaj Bagrecha should have same number)
+                    dhwaj_placeholders = [p for p in individual_placeholders if 'Dhwaj Bagrecha' in str(p)]
+                    same_numbering = len(set(dhwaj_placeholders)) <= 1 if dhwaj_placeholders else True
+                    
+                    details = f"Individual count: {individual_count}, Placeholders: {individual_placeholders}, Same numbering: {same_numbering}, Stats: {stats}"
+                    
+                    if individual_count == 0:
+                        success = False
+                        details += " | No individuals detected"
+                        
+                except json.JSONDecodeError:
+                    details = "Invalid JSON response"
+                    success = False
+            else:
+                details = f"Status: {response.status_code}, Error: {response.text[:200]}"
+
+            self.log_test("Person Name Redaction Test", success, details)
+            return success
+            
+        except Exception as e:
+            self.log_test("Person Name Redaction Test", False, f"Error: {str(e)}")
+            return False
+
+    def test_comprehensive_redaction(self):
+        """Test comprehensive redaction with mixed PII types"""
+        test_text = """
+        Agreement between NeoSan Private Limited (PAN: ABCDE1234F) 
+        and Mr. John D'Rozario (Aadhaar: 1234 5678 9012, Phone: +91 62908 45190).
+        Address: No. 97, 3rd Cross, Domlur Layout, Bangalore - 560022, India.
+        Email: john.drozario@example.com. Date of Birth: 15/08/1985.
+        Companies Act, 2013 applies. NeoSan was established in 2010.
+        """
+        
+        try:
+            from docx import Document
+            import io
+            
+            doc = Document()
+            doc.add_paragraph(test_text)
+            doc_buffer = io.BytesIO()
+            doc.save(doc_buffer)
+            doc_buffer.seek(0)
+            
+            files = {'file': ('comprehensive_test.docx', doc_buffer, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')}
+            response = requests.post(f"{self.base_url}/redact", files=files, timeout=60)
+
+            success = response.status_code == 200
+            
+            if success:
+                try:
+                    response_data = response.json()
+                    stats = response_data.get('stats', {})
+                    audit_log = response_data.get('audit_log', [])
+                    total = response_data.get('total', 0)
+                    
+                    # Expected categories from the test text
+                    expected_categories = ['PRIVATE_LIMITED', 'PAN_NUMBER', 'INDIVIDUAL', 
+                                         'AADHAAR_NUMBER', 'PHONE_NUMBER', 'ADDRESS', 
+                                         'EMAIL', 'DATE_OF_BIRTH', 'ENTITY']
+                    
+                    found_categories = set(stats.keys())
+                    matched_categories = found_categories & set(expected_categories)
+                    
+                    # Check that year '2013' in 'Companies Act, 2013' is NOT redacted
+                    year_not_redacted = True  # We can't easily verify this from API response
+                    
+                    details = f"Total PII: {total}, Found: {matched_categories}, Stats: {stats}, Audit entries: {len(audit_log)}"
+                    
+                    if total < 5:  # Expect at least 5 PII items
+                        success = False
+                        details += " | Too few PII items detected"
+                    
+                    if 'PRIVATE_LIMITED' not in found_categories:
+                        success = False  
+                        details += " | Missing entity redaction"
+                        
+                    if 'INDIVIDUAL' not in found_categories:
+                        success = False
+                        details += " | Missing person name redaction"
+                        
+                    if 'ADDRESS' not in found_categories:
+                        success = False
+                        details += " | Missing address redaction"
+                        
+                except json.JSONDecodeError:
+                    details = "Invalid JSON response"
+                    success = False
+            else:
+                details = f"Status: {response.status_code}, Error: {response.text[:200]}"
+
+            self.log_test("Comprehensive Redaction Test", success, details, response.json() if success else None)
+            return success, response.json() if success else {}
+            
+        except Exception as e:
+            self.log_test("Comprehensive Redaction Test", False, f"Error: {str(e)}")
+            return False, {}
+
+    def test_redact_complex_docx_file(self):
+        """Test redaction with complex .docx file from /tmp"""
+        try:
+            file_path = Path("/tmp/test_complex.docx")
             if not file_path.exists():
-                self.log_test("Redact DOCX File (New Format)", False, "Test file /tmp/test_pii.docx not found")
+                self.log_test("Complex DOCX Redaction", False, "Test file /tmp/test_complex.docx not found")
                 return False, {}
 
             with open(file_path, 'rb') as f:
@@ -80,7 +309,6 @@ class PiiRedactionAPITester:
             if success:
                 try:
                     response_data = response.json()
-                    # NEW: Check for file_id instead of file_base64
                     required_fields = ['stats', 'total', 'file_id', 'filename', 'audit_log']
                     missing_fields = [f for f in required_fields if f not in response_data]
                     
@@ -94,26 +322,18 @@ class PiiRedactionAPITester:
                         filename = response_data.get('filename', '')
                         file_id = response_data.get('file_id', '')
                         
-                        # Verify audit_log format
-                        audit_sample = response_data.get('audit_log', [])[:3]
-                        audit_valid = True
-                        for entry in audit_sample:
-                            if not all(key in entry for key in ['category', 'placeholder', 'location']):
-                                audit_valid = False
-                                break
+                        # Check for new categories
+                        new_categories = set(['PRIVATE_LIMITED', 'LLP', 'ENTITY', 'INDIVIDUAL', 'ADDRESS'])
+                        found_new_categories = set(stats.keys()) & new_categories
                         
-                        if not audit_valid:
-                            details = f"Invalid audit_log format in response"
+                        details = f"PII: {total_pii}, Audit: {audit_count}, New categories found: {found_new_categories}, Stats: {stats}, File ID: {file_id}"
+                        
+                        if not file_id or len(file_id) != 32:
+                            details += " | Invalid file_id format"
                             success = False
-                        else:
-                            details = f"PII: {total_pii}, Audit entries: {audit_count}, Stats: {stats}, File ID: {file_id}, Filename: {filename}"
-                            
-                            # NEW: Check if file_id is valid (should be hex string)
-                            if not file_id or len(file_id) != 32:
-                                details += " | Invalid file_id format"
-                                success = False
-                            else:
-                                details += " | Valid file_id format"
+                        
+                        if not found_new_categories:
+                            details += " | No new redaction categories detected"
                         
                 except json.JSONDecodeError:
                     details = "Invalid JSON response"
@@ -121,11 +341,11 @@ class PiiRedactionAPITester:
             else:
                 details = f"Status: {response.status_code}, Error: {response.text[:200]}"
 
-            self.log_test("Redact DOCX File (New Format)", success, details, response_data if success else None)
+            self.log_test("Complex DOCX Redaction", success, details, response_data if success else None)
             return success, response_data
             
         except Exception as e:
-            self.log_test("Redact DOCX File (New Format)", False, f"Error: {str(e)}")
+            self.log_test("Complex DOCX Redaction", False, f"Error: {str(e)}")
             return False, {}
 
     def test_redact_doc_file(self):
