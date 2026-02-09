@@ -86,12 +86,13 @@ _ADDR_START = (
 )
 FULL_ADDRESS_PATTERN = re.compile(
     _ADDR_START
-    + r"[A-Za-z]?\d[\w/.\-]*"           # Starting identifier (36, No.97, E123)
-    + r"\s*"                              # Optional space after number
-    + r"(?=[\w\s,./\-\'()\&\d:;]*,)"     # Lookahead: must contain comma (address is multi-part)
-    + r"[\w\s,./\-\'()\&\d:;]+?"         # Address body (lazy)
-    + r"[\s,\-–]*[1-9]\d{5}"             # PIN code
-    + r"(?:\s*,?\s*India)?",              # Optional country
+    + r"(?!(?:19|20)\d{2}\b)"               # Exclude years (1900-2099)
+    + r"[A-Za-z]?\d[\w/.\-]*"               # Starting identifier (36, No.97, E123)
+    + r"\s*"                                  # Optional space after number
+    + r"(?=[\w\s,./\-\'()\&\d:;]*,)"        # Lookahead: must contain comma
+    + r"[\w\s,./\-\'()\&\d:;]+?"            # Address body (lazy)
+    + r"[\s,\-–]*[1-9]\d{5}"                # PIN code
+    + r"(?:\s*,?\s*India)?",                 # Optional country
 )
 
 # Road-starting address (Magadi Main Road ... PIN)
@@ -220,7 +221,7 @@ def _redact_entities(text: str, tracker: PIITracker, ctx: str) -> str:
             cat = "LIMITED"
         else:
             cat = "ENTITY"
-        seen_short_names.append(name_part)
+        seen_short_names.append(name_part.split()[0])  # First word for standalone detection
         return tracker.placeholder(cat, full, ctx)
 
     text = ENTITY_PATTERN.sub(_repl, text)
