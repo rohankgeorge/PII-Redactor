@@ -710,9 +710,10 @@ class PiiRedactionAPITester:
             return False
 
     def run_all_tests(self):
-        """Run all backend API tests - focusing on new download architecture"""
-        print("🚀 Starting Backend Tests for PII Redaction Tool - Iteration 3")
-        print("🎯 Focus: New download architecture with file_id system and server-side file serving")
+        """Run all backend API tests - focusing on major redaction engine overhaul"""
+        print("🚀 Starting Backend Tests for PII Redaction Tool - Iteration 4")
+        print("🎯 Focus: Major redaction engine overhaul with PIITracker and unique numbering")
+        print("🔧 Features: Entity names, Full addresses, Universal person names, Unique variables")
         print(f"Testing endpoint: {self.base_url}")
         print("=" * 80)
 
@@ -721,17 +722,28 @@ class PiiRedactionAPITester:
             print("\n❌ Health check failed - API may be down")
             return False
 
-        # Core functionality tests with new file_id format
-        docx_success, docx_data = self.test_redact_docx_file()
+        # New redaction engine tests
+        print("\n🔍 Testing new redaction patterns...")
+        self.test_entity_redaction()
+        self.test_address_redaction()  
+        self.test_person_name_redaction()
+        comprehensive_success, comprehensive_data = self.test_comprehensive_redaction()
+        
+        # Test with complex test file
+        print("\n📄 Testing with complex document...")
+        complex_success, complex_data = self.test_redact_complex_docx_file()
+        
+        # Legacy functionality tests
+        print("\n📋 Testing legacy functionality...")
         doc_success, doc_data = self.test_redact_doc_file()
         batch_success, file_ids = self.test_batch_processing_simulation()
         
-        # Test new download endpoints
-        if docx_success and docx_data.get('file_id'):
-            print("\n📥 Testing new download endpoints...")
-            self.test_download_endpoint(docx_data['file_id'], docx_data.get('filename', ''))
-            self.test_audit_csv_endpoint(docx_data['file_id'])
-            self.test_file_ttl_expiry(docx_data['file_id'])
+        # Test download endpoints with complex data
+        if complex_success and complex_data.get('file_id'):
+            print("\n📥 Testing download endpoints...")
+            self.test_download_endpoint(complex_data['file_id'], complex_data.get('filename', ''))
+            self.test_audit_csv_endpoint(complex_data['file_id'])
+            self.test_file_ttl_expiry(complex_data['file_id'])
         
         # Test batch audit CSV endpoint
         if batch_success and file_ids:
@@ -739,8 +751,8 @@ class PiiRedactionAPITester:
             self.test_batch_audit_csv_endpoint(file_ids)
         
         # Detailed audit log testing
-        if docx_success and docx_data:
-            self.test_audit_log_structure(docx_data)
+        if comprehensive_success and comprehensive_data:
+            self.test_audit_log_structure(comprehensive_data)
         
         # Edge case tests
         print("\n🔍 Testing edge cases...")
@@ -758,7 +770,7 @@ class PiiRedactionAPITester:
                 if result["status"] == "FAILED":
                     print(f"   • {result['test']}: {result['details']}")
         else:
-            print("\n✅ All tests passed! New download architecture working correctly.")
+            print("\n✅ All tests passed! New redaction engine working correctly.")
         
         # Save detailed results
         try:
