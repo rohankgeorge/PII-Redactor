@@ -7,7 +7,8 @@ import ProcessingState from "@/components/ProcessingState";
 import ResultsPanel from "@/components/ResultsPanel";
 import PrivacyFooter from "@/components/PrivacyFooter";
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const API_BASE = process.env.REACT_APP_BACKEND_URL || window.location.origin;
+const API = `${API_BASE}/api`;
 
 export default function Home() {
   const [state, setState] = useState("idle");
