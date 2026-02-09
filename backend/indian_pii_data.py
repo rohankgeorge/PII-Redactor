@@ -74,8 +74,8 @@ PII_REGEX_PATTERNS = [
         r"(?:(?:A/C|a/c|[Aa]ccount|ACC|Acc)[\s]*(?:No\.?|Number|#|:)?[\s]*)\d{9,18}\b"
     )),
 
-    # Indian PIN Code – 6 digits, first digit 1‑9
-    ("PIN_CODE", re.compile(r"\b[1-9]\d{5}\b")),
+    # Indian PIN Code – 6 digits, first digit 1‑9, optional middle space
+    ("PIN_CODE", re.compile(r"\b[1-9]\d{2}\s?\d{3}\b")),
 ]
 
 

@@ -125,9 +125,11 @@ _ADDR_START = (
 )
 _STREET_SUFFIX = (
     r"(?:Street|St\.?|Road|Rd\.?|Avenue|Ave\.?|Boulevard|Blvd\.?|Lane|Ln\.?|"
-    r"Drive|Dr\.?|Court|Ct\.?|Way|Parkway|Pkwy\.?|Place|Pl\.?|Terrace|Ter\.?)"
+    r"Drive|Dr\.?|Court|Ct\.?|Way|Parkway|Pkwy\.?|Place|Pl\.?|Terrace|Ter\.?|"
+    r"Salai|Sarai|Bazaar|Nagar)"
 )
 _GLOBAL_POSTAL_PATTERN = rf"(?:{US_ZIP_PATTERN}|{UK_POSTCODE_PATTERN})"
+_PIN_PATTERN = r"[1-9]\d{2}\s?\d{3}"
 FULL_ADDRESS_PATTERN = re.compile(
     r"(?:^|(?<=\s)|(?<=:)|(?<=\n))"          # Must start at boundary
     + _ADDR_START
@@ -136,7 +138,7 @@ FULL_ADDRESS_PATTERN = re.compile(
     + r"\s*"
     + r"(?=[\w\s,./\-\'()\&\d:;]*,)"
     + r"[\w\s,./\-\'()\&\d:;]+?"
-    + r"[\s,\-–]*[1-9]\d{5}"
+    + r"[\s,\-–]*" + _PIN_PATTERN
     + r"(?:\s*,?\s*India)?",
 )
 
@@ -163,7 +165,7 @@ GENERAL_ADDRESS_PATTERN = re.compile(
 ROAD_ADDRESS_PATTERN = re.compile(
     r"[A-Z][a-z]+(?:\s+[A-Za-z]+)*?\s+(?:Road|Main\s+Road|Street|Marg|Highway)"
     r"[\s,]+[\w][\w\s,./\-\'()\&\d:;]+?"
-    r"[\s,\-–]*[1-9]\d{5}"
+    r"[\s,\-–]*" + _PIN_PATTERN
     r"(?:\s*,?\s*India)?",
 )
 
@@ -182,8 +184,26 @@ ROAD_ONLY_CONTEXT_PATTERN = re.compile(
 PLACE_ADDRESS_PATTERN = re.compile(
     r"[A-Z][a-z]+(?:\s+[A-Za-z][a-z]+)*,"    # Place name followed by comma
     r"[\w\s,./\-\'()\&\d:;]+?"                # Address body
-    r"[\s,\-–]*[1-9]\d{5}"                     # PIN code
+    r"[\s,\-–]*" + _PIN_PATTERN                # PIN code
     r"(?:\s*,?\s*India)?",
+)
+
+# Multi-line address (building line + street line + city/PIN line)
+MULTILINE_ADDRESS_PATTERN = re.compile(
+    r"(?:^|(?<=\n)|(?<=:)|(?<=\s))"
+    r"[A-Z][\w&().,'/\-]*(?:\s+[A-Z0-9][\w&().,'/\-]*)*"
+    r"\s*\n"
+    + _ADDR_START
+    + r"[A-Za-z]?\d[\w/.\-]*"
+    r"[^\n]*?\s+"
+    + _STREET_SUFFIX
+    + r"[^\n]*"
+    r"\s*\n"
+    r"(?:[A-Za-z][A-Za-z\s.'-]+)?"
+    r"\s*[-–,]?\s*"
+    + _PIN_PATTERN
+    + r"(?:\s*,?\s*India)?",
+    re.IGNORECASE,
 )
 
 # Title-based person name
@@ -378,6 +398,7 @@ def _redact_addresses(text: str, tracker: PIITracker, ctx: str) -> str:
 
     text = ROAD_ONLY_CONTEXT_PATTERN.sub(_road_only_repl, text)
     for pattern in [
+        MULTILINE_ADDRESS_PATTERN,
         FULL_ADDRESS_PATTERN,
         ROAD_ADDRESS_PATTERN,
         PLACE_ADDRESS_PATTERN,
