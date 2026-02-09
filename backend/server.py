@@ -29,11 +29,6 @@ from pii_engine import PIITracker, redact_text
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
-# MongoDB connection (required by template)
-mongo_url = os.environ["MONGO_URL"]
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ["DB_NAME"]]
-
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
@@ -42,6 +37,20 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# MongoDB connection (required by template)
+mongo_url = os.environ.get("MONGO_URL")
+db_name = os.environ.get("DB_NAME")
+client = None
+db = None
+if mongo_url and db_name:
+    client = AsyncIOMotorClient(mongo_url)
+    db = client[db_name]
+else:
+    logger.warning(
+        "MongoDB configuration missing; DB features are disabled. "
+        "Set MONGO_URL and DB_NAME to enable."
+    )
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
