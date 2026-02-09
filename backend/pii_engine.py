@@ -167,6 +167,17 @@ ROAD_ADDRESS_PATTERN = re.compile(
     r"(?:\s*,?\s*India)?",
 )
 
+# Standalone road/street line guarded by address cues or list markers
+ROAD_ONLY_CONTEXT_PATTERN = re.compile(
+    r"(?im)"
+    r"(?P<prefix>(?:^|\n)\s*(?:(?:[A-Z]|[0-9])\.\s*)?"
+    r"(?:(?:residing\s+at|address|residence|located\s+at)\s*[:\-–]\s*)?)"
+    r"(?P<road>[A-Za-z0-9][\w.'-]*(?:\s+[A-Za-z0-9][\w.'-]*)*\s+"
+    + _STREET_SUFFIX
+    + r")"
+    r"(?=\s*(?:$|\n|[,;]))"
+)
+
 # Location-based address (named place, ... PIN)
 PLACE_ADDRESS_PATTERN = re.compile(
     r"[A-Z][a-z]+(?:\s+[A-Za-z][a-z]+)*,"    # Place name followed by comma
@@ -335,6 +346,13 @@ def _is_inside_placeholder(text: str, pos: int) -> bool:
 
 def _redact_addresses(text: str, tracker: PIITracker, ctx: str) -> str:
     """Pass 1: Detect and redact full address blocks (number → PIN → India)."""
+    def _road_only_repl(m):
+        road = m.group("road")
+        if "[REDACTED_" in road or _is_inside_placeholder(text, m.start("road")):
+            return m.group()
+        return f"{m.group('prefix')}{tracker.placeholder('ADDRESS', road, ctx)}"
+
+    text = ROAD_ONLY_CONTEXT_PATTERN.sub(_road_only_repl, text)
     for pattern in [
         FULL_ADDRESS_PATTERN,
         ROAD_ADDRESS_PATTERN,
