@@ -85,14 +85,15 @@ _ADDR_START = (
     r"Plot\s+(?:No\.?\s*)?|Sy\.?\s*No\.?\s*|S\.?\s*No\.?\s*)?"
 )
 FULL_ADDRESS_PATTERN = re.compile(
-    _ADDR_START
-    + r"(?!(?:19|20)\d{2}\b)"               # Exclude years (1900-2099)
-    + r"[A-Za-z]?\d[\w/.\-]*"               # Starting identifier (36, No.97, E123)
-    + r"\s*"                                  # Optional space after number
-    + r"(?=[\w\s,./\-\'()\&\d:;]*,)"        # Lookahead: must contain comma
-    + r"[\w\s,./\-\'()\&\d:;]+?"            # Address body (lazy)
-    + r"[\s,\-–]*[1-9]\d{5}"                # PIN code
-    + r"(?:\s*,?\s*India)?",                 # Optional country
+    r"(?:^|(?<=\s)|(?<=:)|(?<=\n))"          # Must start at boundary
+    + _ADDR_START
+    + r"(?!(?:19|20)\d{2}\b)"                 # Exclude years (1900-2099)
+    + r"[A-Za-z]?\d[\w/.\-]*"                 # Starting identifier
+    + r"\s*"
+    + r"(?=[\w\s,./\-\'()\&\d:;]*,)"
+    + r"[\w\s,./\-\'()\&\d:;]+?"
+    + r"[\s,\-–]*[1-9]\d{5}"
+    + r"(?:\s*,?\s*India)?",
 )
 
 # Road-starting address (Magadi Main Road ... PIN)
