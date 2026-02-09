@@ -29,11 +29,6 @@ from pii_engine import PIITracker, redact_text
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
-# MongoDB connection (required by template)
-mongo_url = os.environ["MONGO_URL"]
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ["DB_NAME"]]
-
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
@@ -42,6 +37,16 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# MongoDB connection (optional; used for deployments that need persistence).
+mongo_url = os.environ.get("MONGO_URL")
+db_name = os.environ.get("DB_NAME")
+client = None
+db = None
+if mongo_url and db_name:
+    client = AsyncIOMotorClient(mongo_url)
+    db = client[db_name]
+    logger.info("MongoDB client initialized for optional persistence.")
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
@@ -166,6 +171,18 @@ def process_document(doc_bytes: bytes):
 @api_router.get("/")
 async def root():
     return {"message": "RedactAI API is running"}
+
+
+@api_router.get("/health")
+async def health_check():
+    if not client:
+        return {"status": "ok", "mongo": "disabled"}
+    try:
+        await client.admin.command("ping")
+    except Exception as exc:
+        logger.warning("MongoDB ping failed: %s", exc)
+        return {"status": "degraded", "mongo": "unavailable"}
+    return {"status": "ok", "mongo": "connected"}
 
 
 @api_router.post("/redact")
@@ -295,4 +312,5 @@ app.add_middleware(
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
-    client.close()
+    if client:
+        client.close()
