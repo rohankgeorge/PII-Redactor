@@ -164,6 +164,61 @@ class PiiRedactionAPITester:
             self.log_test("Address Redaction Test", False, f"Error: {str(e)}")
             return False
 
+    def test_road_only_address_redaction(self):
+        """Test standalone road/street line redaction with context cues"""
+        test_text = (
+            "Residing at:\n"
+            "Magadi Main Road\n"
+            "Bangalore\n"
+            "A. MG Road\n"
+            "B. Brigade Road\n"
+            "C. Main Road is blocked."
+        )
+
+        try:
+            from docx import Document
+            import io
+
+            doc = Document()
+            doc.add_paragraph(test_text)
+            doc_buffer = io.BytesIO()
+            doc.save(doc_buffer)
+            doc_buffer.seek(0)
+
+            files = {'file': ('test_road_only_addresses.docx', doc_buffer, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')}
+            response = requests.post(f"{self.base_url}/redact", files=files, timeout=60)
+
+            success = response.status_code == 200
+
+            if success:
+                try:
+                    response_data = response.json()
+                    stats = response_data.get('stats', {})
+                    audit_log = response_data.get('audit_log', [])
+
+                    address_count = stats.get('ADDRESS', 0)
+                    address_placeholders = [entry['placeholder'] for entry in audit_log
+                                          if entry['category'] == 'ADDRESS']
+
+                    details = f"Address count: {address_count}, Placeholders: {address_placeholders}, Stats: {stats}"
+
+                    if address_count < 3:
+                        success = False
+                        details += " | Missing road-only address redactions"
+
+                except json.JSONDecodeError:
+                    details = "Invalid JSON response"
+                    success = False
+            else:
+                details = f"Status: {response.status_code}, Error: {response.text[:200]}"
+
+            self.log_test("Road-Only Address Redaction Test", success, details)
+            return success
+
+        except Exception as e:
+            self.log_test("Road-Only Address Redaction Test", False, f"Error: {str(e)}")
+            return False
+
     def test_person_name_redaction(self):
         """Test universal person name redaction"""
         test_text = "Mr. Alistair Sean D'Rozario and Name: Faisal N. Ansari signed the agreement. Mr. Dhwaj Bagrecha was also present. Later, Dhwaj Bagrecha provided the documents."
@@ -726,6 +781,7 @@ class PiiRedactionAPITester:
         print("\n🔍 Testing new redaction patterns...")
         self.test_entity_redaction()
         self.test_address_redaction()  
+        self.test_road_only_address_redaction()
         self.test_person_name_redaction()
         comprehensive_success, comprehensive_data = self.test_comprehensive_redaction()
         
