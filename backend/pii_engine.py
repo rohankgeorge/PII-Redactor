@@ -91,7 +91,7 @@ class PIITracker:
 
     @property
     def total(self) -> int:
-        return len(self.audit_log)
+        return sum(1 for row in self.audit_log if row.get("category") != "POTENTIAL_LEAK")
 
 
 # ────────────────────────────────────────────────────────────
@@ -737,7 +737,7 @@ def redact_text(
     text = _redact_names(text, tracker, context, name_config)
     text = nlp_engine.run_second_pass(text, tracker, nlp_engine.LEGAL_NLP, nlp_engine.INDIC_PIPELINE, context)
     text = nlp_engine.apply_user_always_redact(text, always_redact, tracker, context)
-    text = nlp_engine.unprotect_never_redact_terms(text, protection_map)
     text = _run_final_qa(text, tracker, context)
+    text = nlp_engine.unprotect_never_redact_terms(text, protection_map)
 
     return text

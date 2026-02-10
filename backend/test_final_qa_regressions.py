@@ -56,3 +56,38 @@ def test_potential_leak_entries_are_marked_red_for_portable_clients():
                 assert row.get("severity") == "REVIEW"
                 assert row.get("highlight") == "RED"
 
+
+
+def test_total_excludes_manual_review_potential_leaks():
+    tracker = PIITracker()
+    tracker.audit_log.extend(
+        [
+            {"category": "EMAIL", "placeholder": "[REDACTED_EMAIL_1]", "location": "Doc"},
+            {"category": "POTENTIAL_LEAK", "placeholder": "EMAIL (0.76) foo@example.com", "location": "Doc", "severity": "REVIEW", "highlight": "RED"},
+            {"category": "PHONE", "placeholder": "[REDACTED_PHONE_1]", "location": "Doc"},
+        ]
+    )
+
+    assert tracker.total == 2
+
+
+def test_allow_list_terms_are_not_re_redacted_by_final_qa():
+    import pii_engine as engine
+
+    allow_file = Path(engine.__file__).parent / "user_allow_list.txt"
+    original = allow_file.read_text(encoding="utf-8")
+    allow_term = "Acme Limited"
+    try:
+        allow_file.write_text(f"{allow_term}\n", encoding="utf-8")
+        tracker = PIITracker()
+        output = redact_text(
+            f"Vendor name is {allow_term}.",
+            tracker,
+            context="Allow-list QA ordering",
+        )
+    finally:
+        allow_file.write_text(original, encoding="utf-8")
+
+    assert allow_term in output
+    assert "[REDACTED_" not in output
+    assert all(signal.get("span") != allow_term for signal in tracker.qa_signals)
