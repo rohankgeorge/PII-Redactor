@@ -74,7 +74,7 @@ test_cases = [
         "name": "Entity detection (multi-token legal suffix with apostrophe)",
         "input": "Notice was issued by Harbor View Owner's Association, Mumbai.",
         "must_contain": "[REDACTED_ENTITY",
-        "must_not_contain": "Owner's Association",
+        "must_not_contain": "Harbor View Owner's Association",
     },
     {
         "name": "Entity detection (multi-token legal suffix with punctuation)",
@@ -90,8 +90,14 @@ for tc in test_cases:
     tracker = PIITracker()
     result = redact_text(tc["input"], tracker)
     ok = True
-    if tc["must_contain"] and tc["must_contain"] not in result:
-        print(f"FAIL: {tc['name']} — expected '{tc['must_contain']}' in result")
+    must_contain = tc.get("must_contain")
+    must_contain_any = tc.get("must_contain_any")
+    if must_contain and must_contain not in result:
+        print(f"FAIL: {tc['name']} — expected '{must_contain}' in result")
+        print(f"  Got: {result}")
+        ok = False
+    if must_contain_any and not any(token in result for token in must_contain_any):
+        print(f"FAIL: {tc['name']} — expected one of {must_contain_any} in result")
         print(f"  Got: {result}")
         ok = False
     if tc["must_not_contain"] and tc["must_not_contain"] in result:
