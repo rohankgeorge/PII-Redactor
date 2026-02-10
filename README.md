@@ -26,9 +26,9 @@ Install these in this exact order:
 - Download and run the installer.
 - During install, keep default options (click **Next** until done).
 
-### 2. Python (3.10 or newer)
+### 2. Python (3.10 to 3.13)
 - Go to: https://www.python.org/downloads/windows/
-- Download **Python 3.10+**.
+- Download **Python 3.10, 3.11, 3.12, or 3.13** (do not use Python 3.14 for this project).
 - IMPORTANT: In the installer, check the box: **Add Python to PATH**.
 - Click **Install Now**.
 
@@ -113,6 +113,22 @@ Fix:
 1. Re-run Python installer.
 2. Enable **Add Python to PATH**.
 3. Restart Command Prompt.
+
+### `No matching distribution found for spacy-transformers==1.3.9`
+This usually means you installed an unsupported Python version (most often Python 3.14).
+
+Fix:
+1. Install Python **3.13** from https://www.python.org/downloads/windows/
+2. In Windows, open **Command Prompt** in the project root and run:
+   ```bat
+   py -3.13 -m venv .venv
+   .venv\Scripts\activate
+   pip install -r backend\requirements.txt
+   python -m spacy download en_core_web_sm
+   ```
+3. Then run `start_windows.bat` again.
+
+Tip: If you have Python 3.14 installed, keep it if you want, but make sure this project uses `py -3.13`.
 
 ### “npm is not recognized”
 Node.js is missing or PATH not updated.
