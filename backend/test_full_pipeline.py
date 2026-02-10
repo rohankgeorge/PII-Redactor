@@ -65,16 +65,22 @@ test_cases = [
         "must_not_contain": "Anna Salai",
     },
     {
-        "name": "ORG/NORP detection (entity mapping)",
-        "input": "Seabrooke Apartments Owner's Association",
-        "must_contain": "[REDACTED_ENTITY",
-        "must_not_contain": None,
+        "name": "Entity detection (backward compatible Pvt. Ltd. suffix)",
+        "input": "The agreement is with Acme Pvt. Ltd. for services.",
+        "must_contain": "[REDACTED_PRIVATE_LIMITED",
+        "must_not_contain": "Acme Pvt. Ltd.",
     },
     {
-        "name": "LLP/ORG detection (entity-compatible mapping)",
-        "input": "S R B C & Co. LLP",
-        "must_contain_any": ["[REDACTED_LLP", "[REDACTED_ENTITY"],
-        "must_not_contain": None,
+        "name": "Entity detection (multi-token legal suffix with apostrophe)",
+        "input": "Notice was issued by Harbor View Owner's Association, Mumbai.",
+        "must_contain": "[REDACTED_ENTITY",
+        "must_not_contain": "Harbor View Owner's Association",
+    },
+    {
+        "name": "Entity detection (multi-token legal suffix with punctuation)",
+        "input": "Representative of Apex Audit Firm: Mr. Rajesh Sharma attended.",
+        "must_contain": "[REDACTED_ENTITY",
+        "must_not_contain": "Apex Audit Firm",
     },
 ]
 

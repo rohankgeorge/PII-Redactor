@@ -97,16 +97,60 @@ class PIITracker:
 # Compiled patterns
 # ────────────────────────────────────────────────────────────
 
-# Entity suffixes
-_ENTITY_SUFFIX = (
-    r"(?:Private\s+Limited|Pvt\.?\s*Ltd\.?|Limited|Ltd\.?|LLP|LLC|"
-    r"Inc\.?|Corporation|Corp\.?|Co\.?|Foundation|Trust|Associates|"
-    r"Enterprises|Industries|Services|Holdings|Group|Partners|Bank)"
-)
+# Entity suffixes are configurable via this lexicon. Keep backward-compatible
+# corporate forms while adding legal-domain variants.
+ENTITY_SUFFIX_LEXICON = [
+    "Private Limited",
+    "Pvt Ltd",
+    "Pvt. Ltd.",
+    "Limited",
+    "Ltd",
+    "Ltd.",
+    "LLP",
+    "LLC",
+    "Inc",
+    "Inc.",
+    "Corporation",
+    "Corp",
+    "Corp.",
+    "Co",
+    "Co.",
+    "Foundation",
+    "Trust",
+    "Associates",
+    "Enterprises",
+    "Industries",
+    "Services",
+    "Holdings",
+    "Group",
+    "Partners",
+    "Bank",
+    "Association",
+    "Associations",
+    "Owners Association",
+    "Owner's Association",
+    "Society",
+    "Federation",
+    "Chamber",
+    "Firm",
+    "Audit Firm",
+]
+
+
+def _build_entity_suffix_pattern(entries: List[str]) -> str:
+    escaped_entries = []
+    for entry in entries:
+        escaped = re.escape(entry.strip())
+        escaped_entries.append(escaped.replace(r"\ ", r"\s+"))
+    escaped_entries.sort(key=len, reverse=True)
+    return r"(?:" + "|".join(escaped_entries) + r")"
+
+
+_ENTITY_SUFFIX = _build_entity_suffix_pattern(ENTITY_SUFFIX_LEXICON)
 ENTITY_PATTERN = re.compile(
     r"\b(?!(?:Mr|Mrs|Ms|Dr|Prof|Shri|Smt|Sri)\.?\s)"   # Exclude titles
     r"([A-Z][\w]+(?:[\s&]+[A-Z][\w]+){0,6})\s+"
-    + r"(?i:" + _ENTITY_SUFFIX + r")" + r"\.?\b",       # Case-insensitive suffix only
+    + r"(?i:" + _ENTITY_SUFFIX + r")" + r"\b",       # Case-insensitive suffix only
 )
 
 def _entity_category(suffix: str) -> str:
@@ -440,15 +484,7 @@ def _redact_entities(text: str, tracker: PIITracker, ctx: str) -> str:
 
     def _capture_defined_terms(match):
         full = match.group().strip().rstrip(".")
-        fl = full.lower().replace(".", "").replace(" ", "")
-        if "privatelimited" in fl or "pvtltd" in fl:
-            cat = "PRIVATE_LIMITED"
-        elif "llp" in fl:
-            cat = "LLP"
-        elif "limited" in fl or "ltd" in fl:
-            cat = "LIMITED"
-        else:
-            cat = "ENTITY"
+        cat = _entity_category(full)
         tail = text[match.end():match.end() + 140]
         for pattern in (DEFINED_TERM_QUOTED_PATTERN, DEFINED_TERM_PLAIN_PATTERN):
             alias_match = pattern.search(tail)
@@ -469,15 +505,7 @@ def _redact_entities(text: str, tracker: PIITracker, ctx: str) -> str:
             return m.group()
         name_part = m.group(1).strip()
         # Determine category from full matched text
-        fl = full.lower().replace(".", "").replace(" ", "")
-        if "privatelimited" in fl or "pvtltd" in fl:
-            cat = "PRIVATE_LIMITED"
-        elif "llp" in fl:
-            cat = "LLP"
-        elif "limited" in fl or "ltd" in fl:
-            cat = "LIMITED"
-        else:
-            cat = "ENTITY"
+        cat = _entity_category(full)
         seen_short_names.append(name_part.split()[0])  # First word for standalone detection
         return tracker.placeholder(cat, full, ctx)
 
