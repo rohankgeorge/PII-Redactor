@@ -64,6 +64,24 @@ test_cases = [
         "must_contain": "[REDACTED_ADDRESS",
         "must_not_contain": "Anna Salai",
     },
+    {
+        "name": "Entity detection (backward compatible Pvt. Ltd. suffix)",
+        "input": "The agreement is with Acme Pvt. Ltd. for services.",
+        "must_contain": "[REDACTED_PRIVATE_LIMITED",
+        "must_not_contain": "Acme Pvt. Ltd.",
+    },
+    {
+        "name": "Entity detection (multi-token legal suffix with apostrophe)",
+        "input": "Notice was issued by Harbor View Owner's Association, Mumbai.",
+        "must_contain": "[REDACTED_ENTITY",
+        "must_not_contain": "Owner's Association",
+    },
+    {
+        "name": "Entity detection (multi-token legal suffix with punctuation)",
+        "input": "Representative of Apex Audit Firm: Mr. Rajesh Sharma attended.",
+        "must_contain": "[REDACTED_ENTITY",
+        "must_not_contain": "Apex Audit Firm",
+    },
 ]
 
 passed = 0
