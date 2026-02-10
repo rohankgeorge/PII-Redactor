@@ -433,6 +433,29 @@ _STOP_PHRASES = {
     "joint other actions", "compliance checks", "quality assurance",
 }
 
+_ADDRESS_HOUSE_TOKENS = {
+    "no", "flat", "door", "house", "plot", "block", "sy", "s", "survey",
+}
+_ADDRESS_STREET_SUFFIXES = {
+    "street", "st", "road", "rd", "avenue", "ave", "boulevard", "blvd", "lane", "ln",
+    "drive", "dr", "court", "ct", "way", "parkway", "pkwy", "place", "pl", "terrace", "ter",
+    "salai", "sarai", "bazaar", "nagar", "marg", "highway", "expressway", "bypass", "cross",
+    "layout", "colony",
+}
+_ADDRESS_AREA_TOKENS = {
+    # Indian locality / area naming conventions
+    "area", "locality", "village", "post", "po", "district", "dist", "tehsil", "taluk",
+    "hobli", "mandal", "mohalla", "peth", "wadi", "gaon", "gram", "phase", "sector",
+    "extension", "extn", "main", "cross", "crossroad", "crossroads", "circle", "chowk",
+    "gali", "society", "enclave", "camp", "gate", "bazar", "bazaar", "nagaram", "cheri",
+    "puram", "pura", "khera", "khurd", "kalan", "thana", "pincode", "pin",
+}
+_ADDRESS_LEGAL_CLAUSE_TERMS = {
+    "whereas", "agreement", "clause", "section", "article", "hereby", "thereof", "thereunder",
+    "petitioner", "respondent", "plaintiff", "defendant", "appellant", "affidavit", "writ",
+    "application", "court", "tribunal", "proceeding",
+}
+
 # ────────────────────────────────────────────────────────────
 # Redaction functions – ordered by priority
 # ────────────────────────────────────────────────────────────
@@ -452,6 +475,121 @@ def _is_inside_placeholder(text: str, pos: int) -> bool:
         return False
     last_close = before.rfind("]", last_open)
     return last_close < last_open  # Open bracket found with no matching close
+
+
+def _looks_like_non_address_legal_clause(candidate: str) -> bool:
+    lowered = candidate.lower()
+    legal_hits = sum(1 for term in _ADDRESS_LEGAL_CLAUSE_TERMS if term in lowered)
+    cue_hits = 0
+    if re.search(r"\b(?:no\.?|flat|door|house|plot|block)\b", lowered):
+        cue_hits += 1
+    if re.search(r"\b\d+(?:st|nd|rd|th)\b", lowered):
+        cue_hits += 1
+    if re.search(r"\b(?:" + "|".join(_ADDRESS_STREET_SUFFIXES) + r")\b", lowered):
+        cue_hits += 1
+    if re.search(_PIN_OR_MASKED_PATTERN, candidate):
+        cue_hits += 1
+    return legal_hits >= 2 and cue_hits <= 1
+
+
+def _score_address_candidate(candidate: str) -> int:
+    score = 0
+    lowered = candidate.lower()
+    tokens = re.findall(r"[a-z0-9./#-]+", lowered)
+    token_set = set(t.rstrip(".,;:") for t in tokens)
+
+    if any(t in _ADDRESS_HOUSE_TOKENS for t in token_set):
+        score += 3
+    if re.search(r"\b\d+(?:st|nd|rd|th)\b", lowered):
+        score += 2
+
+    area_hits = sum(1 for token in token_set if token in _ADDRESS_AREA_TOKENS)
+    score += min(area_hits, 2) * 2
+    if re.search(r"\b(?:sector|phase)\s*[-:]?\s*[a-z0-9]+\b", lowered):
+        score += 2
+    if re.search(r"\b(?:village|dist(?:rict)?|taluk|tehsil|mandal)\b", lowered):
+        score += 2
+
+    street_hits = sum(1 for sfx in _ADDRESS_STREET_SUFFIXES if re.search(rf"\b{re.escape(sfx)}\b", lowered))
+    score += min(street_hits, 2) * 3
+
+    city_hits = sum(1 for city in INDIAN_CITIES if re.search(rf"\b{re.escape(city.lower())}\b", lowered))
+    state_hits = sum(1 for state in INDIAN_STATES if re.search(rf"\b{re.escape(state.lower())}\b", lowered))
+    score += min(city_hits, 1) * 2
+    score += min(state_hits, 1) * 2
+
+    if re.search(_PIN_OR_MASKED_PATTERN, candidate):
+        score += 3
+    elif re.search(r"\b\d{5,6}\b", candidate):
+        score += 2
+
+    if candidate.count(",") >= 1:
+        score += 1
+    if candidate.count("\n") >= 1:
+        score += 1
+
+    return score
+
+
+def _redact_address_fallback_candidates(text: str, tracker: PIITracker, ctx: str) -> str:
+    lines = text.splitlines(keepends=True)
+    if not lines:
+        return text
+
+    line_starts: List[int] = []
+    cursor = 0
+    for line in lines:
+        line_starts.append(cursor)
+        cursor += len(line)
+    line_starts.append(cursor)
+
+    threshold = 6
+    candidates: List[Tuple[int, int, int]] = []
+    for i in range(len(lines)):
+        for window in (1, 2, 3):
+            j = i + window
+            if j > len(lines):
+                break
+            start = line_starts[i]
+            end = line_starts[j]
+            snippet = text[start:end]
+            trimmed = snippet.strip()
+            if len(trimmed) < 12 or "[REDACTED_" in snippet:
+                continue
+            left_trim = len(snippet) - len(snippet.lstrip())
+            right_trim = len(snippet) - len(snippet.rstrip())
+            span_start = start + left_trim
+            span_end = end - right_trim
+            if span_end <= span_start:
+                continue
+            if _is_inside_placeholder(text, span_start) or _looks_like_non_address_legal_clause(trimmed):
+                continue
+            score = _score_address_candidate(trimmed)
+            if score >= threshold:
+                candidates.append((span_start, span_end, score))
+
+    if not candidates:
+        return text
+
+    candidates.sort(key=lambda item: (item[0], -(item[1] - item[0]), -item[2]))
+    selected: List[Tuple[int, int]] = []
+    last_end = -1
+    for start, end, _ in candidates:
+        if start < last_end:
+            continue
+        selected.append((start, end))
+        last_end = end
+
+    if not selected:
+        return text
+
+    out = text
+    for start, end in reversed(selected):
+        original = out[start:end]
+        if "[REDACTED_" in original:
+            continue
+        out = out[:start] + tracker.placeholder("ADDRESS", original, ctx) + out[end:]
+    return out
 
 
 def _redact_addresses(text: str, tracker: PIITracker, ctx: str) -> str:
@@ -475,6 +613,7 @@ def _redact_addresses(text: str, tracker: PIITracker, ctx: str) -> str:
                 return m.group()
             return tracker.placeholder("ADDRESS", m.group(), ctx)
         text = pattern.sub(_repl, text)
+    text = _redact_address_fallback_candidates(text, tracker, ctx)
     return text
 
 
