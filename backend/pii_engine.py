@@ -128,10 +128,11 @@ _ADDR_START = (
 _STREET_SUFFIX = (
     r"(?:Street|St\.?|Road|Rd\.?|Avenue|Ave\.?|Boulevard|Blvd\.?|Lane|Ln\.?|"
     r"Drive|Dr\.?|Court|Ct\.?|Way|Parkway|Pkwy\.?|Place|Pl\.?|Terrace|Ter\.?|"
-    r"Salai|Sarai|Bazaar|Nagar)"
+    r"Salai|Sarai|Bazaar|Nagar|Marg|Highway|Expressway|Bypass|Cross|Layout|Colony)"
 )
 _GLOBAL_POSTAL_PATTERN = rf"(?:{US_ZIP_PATTERN}|{UK_POSTCODE_PATTERN})"
 _PIN_PATTERN = r"[1-9]\d{2}\s?\d{3}"
+_PIN_OR_MASKED_PATTERN = rf"(?:{_PIN_PATTERN}|[1-9][xX*]{{5}})"
 FULL_ADDRESS_PATTERN = re.compile(
     r"(?:^|(?<=\s)|(?<=:)|(?<=\n))"          # Must start at boundary
     + _ADDR_START
@@ -165,10 +166,17 @@ GENERAL_ADDRESS_PATTERN = re.compile(
 
 # Road-starting address (Magadi Main Road ... PIN)
 ROAD_ADDRESS_PATTERN = re.compile(
-    r"[A-Z][a-z]+(?:\s+[A-Za-z]+)*?\s+(?:Road|Main\s+Road|Street|Marg|Highway)"
-    r"[\s,]+[\w][\w\s,./\-\'()\&\d:;]+?"
-    r"[\s,\-–]*" + _PIN_PATTERN
+    r"(?:^|(?<=\s)|(?<=:)|(?<=\n))"
+    r"(?:[A-Z][\w&().,'/\-]*(?:\s+[A-Z0-9][\w&().,'/\-]*){0,5}\s*,\s*)?"
+    + _ADDR_START
+    + r"(?:\d+[A-Za-z]?(?:\s*(?:&|/|-)\s*\d+[A-Za-z]?)*\s+)?"
+    + r"[A-Za-z0-9][\w.'\-/]*(?:\s+[A-Za-z0-9][\w.'\-/]*){0,6}\s+"
+    + _STREET_SUFFIX
+    + r"[\s,]+[\w][\w\s,./\-\'()\&:;]*?"
+    + r"[\s,\-–]*"
+    + _PIN_OR_MASKED_PATTERN
     + r"(?:\s*,?\s*India)?",
+    re.IGNORECASE,
 )
 
 # Standalone road/street line guarded by address cues or list markers
@@ -179,7 +187,7 @@ ROAD_ONLY_CONTEXT_PATTERN = re.compile(
     r"(?P<road>[A-Za-z0-9][\w.'-]*(?:\s+[A-Za-z0-9][\w.'-]*)*\s+"
     + _STREET_SUFFIX
     + r")"
-    r"(?=\s*(?:$|\n|[,;]))"
+    r"(?=\s*(?:$|\n|[,;]|[-–]|\d|[A-Za-z]))"
 )
 
 # Location-based address (named place, ... PIN)
@@ -203,7 +211,7 @@ MULTILINE_ADDRESS_PATTERN = re.compile(
     + r"\s*\n"
     r"(?:[A-Za-z][A-Za-z\s.'-]+)?"
     r"\s*[-–,]?\s*"
-    + _PIN_PATTERN
+    + _PIN_OR_MASKED_PATTERN
     + r"(?:\s*,?\s*India)?",
     re.IGNORECASE,
 )
