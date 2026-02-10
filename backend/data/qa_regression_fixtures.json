@@ -1,0 +1,14 @@
+[
+  {
+    "name": "multiline_hq_address_and_exec",
+    "input": "Kasturi Buildings\n859 & 860 Anna Salai\nChennai - 600002\nContact: Mr. Rajesh Sharma"
+  },
+  {
+    "name": "registered_office_entity",
+    "input": "Registered Office: Kasturi Buildings, 859 & 860 Anna Salai, Chennai - 600002. Vendor: Alpha Holdings Private Limited"
+  },
+  {
+    "name": "nagar_extension_address",
+    "input": "Address: No. 12, Lakshmi Nagar Extension, Chennai - 600034. Authorized signatory Dr. Priya Menon"
+  }
+]
