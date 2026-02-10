@@ -1,17 +1,153 @@
 # PII-Redactor
 
-## Run with Docker
+A beginner-friendly tool that removes personally identifiable information (PII) from text.
 
-```bash
-docker-compose up --build
+---
+
+## If you are brand new: use this exact guide (Windows)
+
+This section is written for users who have never run code from GitHub before.
+
+## What you will do
+
+1. Install 3 things (Git, Python, Node.js)
+2. Download this project from GitHub
+3. Double-click one file: `start_windows.bat`
+4. Open the app in your browser
+
+---
+
+## Step 1) Install required software (one time setup)
+
+Install these in this exact order:
+
+### 1. Git
+- Go to: https://git-scm.com/download/win
+- Download and run the installer.
+- During install, keep default options (click **Next** until done).
+
+### 2. Python (3.10 or newer)
+- Go to: https://www.python.org/downloads/windows/
+- Download **Python 3.10+**.
+- IMPORTANT: In the installer, check the box: **Add Python to PATH**.
+- Click **Install Now**.
+
+### 3. Node.js (LTS version)
+- Go to: https://nodejs.org/
+- Download the **LTS** version.
+- Run installer with default settings.
+
+---
+
+## Step 2) Download this project from GitHub
+
+You can do this with either method below.
+
+### Option A (easiest): Download ZIP
+1. Open this repository page on GitHub.
+2. Click **Code** → **Download ZIP**.
+3. Extract ZIP to a simple location, for example:
+   - `C:\PII-Redactor`
+
+### Option B: Clone with Git
+1. Open **Command Prompt**.
+2. Run:
+
+```bat
+git clone <REPOSITORY_URL>
 ```
 
-- Backend: `http://localhost:8000`
-- Frontend: `http://localhost:3000`
+3. Move into the folder:
 
-## Run without Docker (Windows)
+```bat
+cd PII-Redactor
+```
 
-Double-click `start_windows.bat`.
+> If you used ZIP download, just open the extracted `PII-Redactor` folder in File Explorer.
+
+---
+
+## Step 3) Start the app
+
+1. Open the `PII-Redactor` folder.
+2. Find `start_windows.bat`.
+3. Double-click `start_windows.bat`.
+
+It will open terminal windows and do setup automatically:
+- install Python packages
+- download a language model
+- install frontend packages
+- start backend on port `8000`
+- start frontend on port `3000`
+
+### First run can take several minutes
+This is normal.
+
+---
+
+## Step 4) Open the app in browser
+
+After startup finishes, open:
+
+- **Frontend (main app):** http://localhost:3000
+- **Backend API (technical endpoint):** http://localhost:8000
+
+Use the frontend URL (`3000`) to use the application.
+
+---
+
+## How to stop the app
+
+- Close the terminal windows that were opened by `start_windows.bat`,
+  **or**
+- Press `Ctrl + C` in each terminal window.
+
+---
+
+## Troubleshooting (common beginner issues)
+
+### “python is not recognized”
+Python was likely not added to PATH.
+
+Fix:
+1. Re-run Python installer.
+2. Enable **Add Python to PATH**.
+3. Restart Command Prompt.
+
+### “npm is not recognized”
+Node.js is missing or PATH not updated.
+
+Fix:
+1. Reinstall Node.js LTS.
+2. Restart your PC (or sign out/in).
+
+### Frontend opens but page is blank / errors
+1. Check backend window for errors.
+2. Make sure backend says it is running on `http://0.0.0.0:8000`.
+3. Re-run `start_windows.bat`.
+
+### Port already in use (3000 or 8000)
+Another program is already using that port.
+
+Quick fix:
+1. Close old terminal windows from previous runs.
+2. Restart your computer.
+3. Run `start_windows.bat` again.
+
+---
+
+## Optional custom word lists
+
+You can customize what should always or never be redacted:
+
+- Always redact list: `backend/user_redact_list.txt`
+- Never redact list: `backend/user_allow_list.txt`
+
+Rules:
+- One term per line
+- Lines starting with `#` are ignored
+
+---
 
 ## Optional models
 
@@ -27,16 +163,16 @@ IndicNER (optional):
 pip install transformers torch
 ```
 
-## User list files
+---
 
-- Always redact list: `backend/user_redact_list.txt`
-- Never redact list: `backend/user_allow_list.txt`
+## Alternative: Run with Docker
 
-One term per line. Lines beginning with `#` are ignored.
-
-## Tests
+If you already know Docker:
 
 ```bash
-cd backend
-python test_full_pipeline.py
+docker-compose up --build
 ```
+
+Then open:
+- Frontend: `http://localhost:3000`
+- Backend: `http://localhost:8000`
