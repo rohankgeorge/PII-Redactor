@@ -36,6 +36,7 @@ class PIITracker:
         self._alias_terms: Dict[str, str] = {}
         self.stats: Dict[str, int] = {}
         self.audit_log: list = []
+        self.qa_signals: list = []
 
     def placeholder(self, category: str, original: str, context: str = "") -> str:
         key = original.strip().lower()
@@ -566,6 +567,150 @@ def _redact_locations(text: str, tracker: PIITracker, ctx: str) -> str:
     return text
 
 
+QA_AUTO_REDACT_THRESHOLD = 0.8
+QA_REVIEW_HIGHLIGHT_COLOR = "RED"
+_STREET_CUE = (
+    r"(?:Street|St\.?|Road|Rd\.?|Avenue|Ave\.?|Boulevard|Blvd\.?|Lane|Ln\.?|"
+    r"Drive|Dr\.?|Court|Ct\.?|Way|Place|Terrace|Nagar|Marg|Layout|Colony|Salai)"
+)
+QA_ADDRESS_WITH_POSTAL_PATTERN = re.compile(
+    r"\b[\w][\w\s,./\-'()&:;]{4,120}\b"
+    + _STREET_CUE
+    + r"\b[\w\s,./\-'()&:;]{0,40}\b(?:[1-9]\d{2}\s?\d{3}|[1-9][xX*]{5})\b",
+    re.IGNORECASE,
+)
+QA_ADDRESS_CUE_PATTERN = re.compile(
+    r"\b(?:No\.?\s*\d+[\w/\-]*,\s*)?[A-Za-z0-9][\w\s,./\-'()&:;]{2,80}\b"
+    + _STREET_CUE
+    + r"\b",
+    re.IGNORECASE,
+)
+QA_ENTITY_CUE_PATTERN = re.compile(
+    r"\b([A-Z][\w&.-]*(?:\s+[A-Z][\w&.-]*){0,6}\s+(?:Private\s+Limited|Pvt\.?\s*Ltd\.?|"
+    r"Limited|Ltd\.?|LLP|LLC|Inc\.?|Corporation|Corp\.?|Trust|Foundation|Associates|Group|Bank))\b",
+)
+QA_INDIVIDUAL_CUE_PATTERN = re.compile(
+    r"\b(?:Mr|Mrs|Ms|Dr|Prof|Shri|Smt|Sri)\.?\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})\b",
+)
+
+
+def _run_final_qa(text: str, tracker: PIITracker, context: str) -> str:
+    """Final QA pass to detect suspicious residual PII after redaction transforms."""
+    detections: list[dict] = []
+    nlp = nlp_engine.load_nlp_pipeline()
+
+    for ent in nlp_engine.detect_names_and_locations(text, nlp):
+        label = ent["label"]
+        if label == "PERSON":
+            signal_type = "INDIVIDUAL"
+            confidence = 0.74
+        elif label == "ORG":
+            signal_type = "ENTITY"
+            confidence = 0.72
+        elif label in {"GPE", "LOC"}:
+            signal_type = "ADDRESS"
+            confidence = 0.6
+        else:
+            continue
+        detections.append(
+            {
+                "start": ent["start"],
+                "end": ent["end"],
+                "span": ent["text"],
+                "type": signal_type,
+                "confidence": confidence,
+                "source": "NER",
+            }
+        )
+
+    for m in QA_ADDRESS_WITH_POSTAL_PATTERN.finditer(text):
+        detections.append(
+            {
+                "start": m.start(),
+                "end": m.end(),
+                "span": m.group().strip(),
+                "type": "ADDRESS",
+                "confidence": 0.9,
+                "source": "FUZZY_ADDRESS",
+            }
+        )
+    for m in QA_ADDRESS_CUE_PATTERN.finditer(text):
+        detections.append(
+            {
+                "start": m.start(),
+                "end": m.end(),
+                "span": m.group().strip(),
+                "type": "ADDRESS",
+                "confidence": 0.67,
+                "source": "FUZZY_ADDRESS",
+            }
+        )
+    for m in QA_ENTITY_CUE_PATTERN.finditer(text):
+        detections.append(
+            {
+                "start": m.start(1),
+                "end": m.end(1),
+                "span": m.group(1).strip(),
+                "type": "ENTITY",
+                "confidence": 0.9,
+                "source": "FUZZY_ENTITY",
+            }
+        )
+    for m in QA_INDIVIDUAL_CUE_PATTERN.finditer(text):
+        detections.append(
+            {
+                "start": m.start(1),
+                "end": m.end(1),
+                "span": m.group(1).strip(),
+                "type": "INDIVIDUAL",
+                "confidence": 0.82,
+                "source": "FUZZY_INDIVIDUAL",
+            }
+        )
+
+    filtered: list[dict] = []
+    for det in sorted(detections, key=lambda item: (-item["confidence"], item["start"], -(item["end"] - item["start"]))):
+        span = det["span"].strip()
+        if not span or "[REDACTED_" in span or _is_inside_placeholder(text, det["start"]):
+            continue
+        if len(span) <= 2:
+            continue
+        if any(not (det["end"] <= existing["start"] or det["start"] >= existing["end"]) for existing in filtered):
+            continue
+        filtered.append(det)
+
+    for det in sorted(filtered, key=lambda item: item["start"], reverse=True):
+        confidence = round(det["confidence"], 2)
+        signal = {
+            "type": det["type"],
+            "span": det["span"],
+            "confidence": confidence,
+            "source": det["source"],
+            "location": context,
+            "severity": "HIGH" if det["confidence"] >= QA_AUTO_REDACT_THRESHOLD else "REVIEW",
+            "highlight": QA_REVIEW_HIGHLIGHT_COLOR,
+        }
+        if det["confidence"] >= QA_AUTO_REDACT_THRESHOLD:
+            placeholder = tracker.placeholder(det["type"], det["span"], context)
+            text = text[: det["start"]] + placeholder + text[det["end"] :]
+            signal["action"] = "AUTO_REDACTED"
+            signal["placeholder"] = placeholder
+        else:
+            signal["action"] = "MANUAL_REVIEW"
+            tracker.audit_log.append(
+                {
+                    "category": "POTENTIAL_LEAK",
+                    "placeholder": f"{det['type']} ({signal['confidence']}) {det['span']}",
+                    "location": context,
+                    "severity": "REVIEW",
+                    "highlight": QA_REVIEW_HIGHLIGHT_COLOR,
+                }
+            )
+        tracker.qa_signals.append(signal)
+
+    return text
+
+
 # ────────────────────────────────────────────────────────────
 # Main entry point
 # ────────────────────────────────────────────────────────────
@@ -593,5 +738,6 @@ def redact_text(
     text = nlp_engine.run_second_pass(text, tracker, nlp_engine.LEGAL_NLP, nlp_engine.INDIC_PIPELINE, context)
     text = nlp_engine.apply_user_always_redact(text, always_redact, tracker, context)
     text = nlp_engine.unprotect_never_redact_terms(text, protection_map)
+    text = _run_final_qa(text, tracker, context)
 
     return text

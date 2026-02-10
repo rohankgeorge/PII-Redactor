@@ -51,7 +51,14 @@ _file_store: Dict[str, dict] = {}
 _FILE_TTL = 600  # 10 minutes
 
 
-def _store_file(data: bytes, filename: str, audit_log: list, stats: dict, total: int) -> str:
+def _store_file(
+    data: bytes,
+    filename: str,
+    audit_log: list,
+    stats: dict,
+    total: int,
+    qa_signals: list,
+) -> str:
     """Store file data and return a unique download ID."""
     _cleanup_expired()
     file_id = uuid.uuid4().hex
@@ -59,11 +66,27 @@ def _store_file(data: bytes, filename: str, audit_log: list, stats: dict, total:
         "data": data,
         "filename": filename,
         "audit_log": audit_log,
+        "qa_signals": qa_signals,
         "stats": stats,
         "total": total,
         "created": time.time(),
     }
     return file_id
+
+
+def _portable_review_payload(audit_log: list, qa_signals: list) -> dict:
+    """Return UI-agnostic review hints for any client (web/desktop/offline)."""
+    potential_leaks = [
+        row for row in audit_log
+        if row.get("category") == "POTENTIAL_LEAK"
+    ]
+    return {
+        "review_required": bool(potential_leaks),
+        "highlight_color": "RED",
+        "potential_leak_count": len(potential_leaks),
+        "manual_review_items": potential_leaks,
+        "qa_signal_count": len(qa_signals),
+    }
 
 
 def _cleanup_expired():
@@ -160,7 +183,7 @@ def process_document(doc_bytes: bytes):
     buf = io.BytesIO()
     doc.save(buf)
     buf.seek(0)
-    return tracker.stats, tracker.total, buf.read(), tracker.audit_log
+    return tracker.stats, tracker.total, buf.read(), tracker.audit_log, tracker.qa_signals
 
 
 # ── Routes ──────────────────────────────────────────────────
@@ -184,7 +207,7 @@ async def redact_document(file: UploadFile = File(...)):
         if fname.endswith(".doc") and not fname.endswith(".docx"):
             content = convert_doc_to_docx(content)
 
-        stats, total, redacted_bytes, audit_log = process_document(content)
+        stats, total, redacted_bytes, audit_log, qa_signals = process_document(content)
     except Exception as exc:
         logger.error("Document processing failed: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Processing failed: {exc}")
@@ -192,14 +215,16 @@ async def redact_document(file: UploadFile = File(...)):
     original_stem = (file.filename or "document").rsplit(".", 1)[0]
     filename = f"redacted_{original_stem}.docx"
 
-    file_id = _store_file(redacted_bytes, filename, audit_log, stats, total)
+    file_id = _store_file(redacted_bytes, filename, audit_log, stats, total, qa_signals)
 
     return {
         "stats": stats,
         "total": total,
+        "qa_signals": qa_signals,
         "file_id": file_id,
         "filename": filename,
         "audit_log": audit_log,
+        "review": _portable_review_payload(audit_log, qa_signals),
     }
 
 
