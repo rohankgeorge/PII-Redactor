@@ -21,6 +21,8 @@ from global_pii_data import (
     UK_POSTCODE_PATTERN,
 )
 
+import nlp_engine
+
 
 # ────────────────────────────────────────────────────────────
 # PIITracker – assigns unique numbered placeholders
@@ -166,7 +168,7 @@ ROAD_ADDRESS_PATTERN = re.compile(
     r"[A-Z][a-z]+(?:\s+[A-Za-z]+)*?\s+(?:Road|Main\s+Road|Street|Marg|Highway)"
     r"[\s,]+[\w][\w\s,./\-\'()\&\d:;]+?"
     r"[\s,\-–]*" + _PIN_PATTERN
-    r"(?:\s*,?\s*India)?",
+    + r"(?:\s*,?\s*India)?",
 )
 
 # Standalone road/street line guarded by address cues or list markers
@@ -185,7 +187,7 @@ PLACE_ADDRESS_PATTERN = re.compile(
     r"[A-Z][a-z]+(?:\s+[A-Za-z][a-z]+)*,"    # Place name followed by comma
     r"[\w\s,./\-\'()\&\d:;]+?"                # Address body
     r"[\s,\-–]*" + _PIN_PATTERN                # PIN code
-    r"(?:\s*,?\s*India)?",
+    + r"(?:\s*,?\s*India)?",
 )
 
 # Multi-line address (building line + street line + city/PIN line)
@@ -195,10 +197,10 @@ MULTILINE_ADDRESS_PATTERN = re.compile(
     r"\s*\n"
     + _ADDR_START
     + r"[A-Za-z]?\d[\w/.\-]*"
-    r"[^\n]*?\s+"
+    + r"[^\n]*?\s+"
     + _STREET_SUFFIX
     + r"[^\n]*"
-    r"\s*\n"
+    + r"\s*\n"
     r"(?:[A-Za-z][A-Za-z\s.'-]+)?"
     r"\s*[-–,]?\s*"
     + _PIN_PATTERN
@@ -529,74 +531,31 @@ def _redact_names(
     ctx: str,
     config: NameDetectionConfig = _NAME_DETECTION_CONFIG,
 ) -> str:
-    """Pass 4: Detect person names (titles, context, dictionary, heuristic)."""
+    """Pass 4: Detect person names and locations with spaCy + EntityRuler."""
+    _ = config
+    nlp = nlp_engine.load_nlp_pipeline()
+    entities = nlp_engine.detect_names_and_locations(text, nlp)
 
-    # 4a: Title-based names (Mr./Mrs./Dr. + following name)
-    if config.use_title:
-        def _title_repl(m):
-            if _is_inside_placeholder(text, m.start()):
-                return m.group()
-            # Track by name-only (group 1) so "Mr. X" and "X" get the same number
-            return tracker.placeholder("INDIVIDUAL", m.group(1).strip(), ctx)
-        text = TITLE_NAME_PATTERN.sub(_title_repl, text)
-
-    # 4b: Context-based names ("Name:" patterns)
-    if config.use_context_label:
-        def _ctx_repl(m):
-            name = m.group(1).strip()
-            if _is_inside_placeholder(text, m.start()) or len(name) < 3:
-                return m.group()
-            prefix = m.group()[:m.group().index(name)]
-            return prefix + tracker.placeholder("INDIVIDUAL", name, ctx)
-        text = CONTEXT_NAME_PATTERN.sub(_ctx_repl, text)
-
-    # 4c: Contextual cue names ("Party:", "Authorized Signatory:", "Witness:")
-    if config.use_contextual_cues:
-        def _cue_repl(m):
-            phrase = m.group(1).strip()
-            if _is_inside_placeholder(text, m.start()) or _is_false_positive_name(phrase):
-                return m.group()
-            prefix = m.group()[:m.group().index(phrase)]
-            return prefix + tracker.placeholder("INDIVIDUAL", phrase, ctx)
-        text = CONTEXTUAL_CUE_PATTERN.sub(_cue_repl, text)
-
-    # 4c: Consecutive capitalized words (catch multi-word names before single words)
-    if config.use_consecutive_caps:
-        def _consec_repl(m):
-            phrase = m.group(1).strip()
-            if _is_inside_placeholder(text, m.start()):
-                return m.group()
-            if _is_false_positive_name(phrase):
-                return m.group()
-            # Check if at least one word is a known name
-            words = phrase.split()
-            has_known = any(w in INDIAN_FIRST_NAMES or w in INDIAN_SURNAMES for w in words)
-            if has_known and len(words) >= 2:
-                return tracker.placeholder("INDIVIDUAL", phrase, ctx)
-            return m.group()
-        text = CONSEC_CAP_PATTERN.sub(_consec_repl, text)
-
-    # 4d: Dictionary-based Indian names (single words — catch remaining)
-    if config.use_dictionary and NAME_DICT_PATTERN:
-        def _dict_repl(m):
-            if _is_inside_placeholder(text, m.start()):
-                return m.group()
-            return tracker.placeholder("INDIVIDUAL", m.group(), ctx)
-        text = NAME_DICT_PATTERN.sub(_dict_repl, text)
+    for ent in sorted(entities, key=lambda item: item["start"], reverse=True):
+        if _is_inside_placeholder(text, ent["start"]):
+            continue
+        if ent["label"] == "PERSON":
+            category = "INDIVIDUAL"
+        elif ent["label"] in {"GPE", "LOC"}:
+            category = "LOCATION"
+        else:
+            continue
+        placeholder = tracker.placeholder(category, ent["text"], ctx)
+        text = text[: ent["start"]] + placeholder + text[ent["end"] :]
 
     return text
 
 
 def _redact_locations(text: str, tracker: PIITracker, ctx: str) -> str:
-    """Pass 5: Detect remaining location names (cities/states)."""
-    if not LOCATION_DICT_PATTERN:
-        return text
-
-    def _repl(m):
-        if _is_inside_placeholder(text, m.start()):
-            return m.group()
-        return tracker.placeholder("LOCATION", m.group(), ctx)
-    return LOCATION_DICT_PATTERN.sub(_repl, text)
+    """No-op. Locations are handled in _redact_names via NLP."""
+    _ = tracker
+    _ = ctx
+    return text
 
 
 # ────────────────────────────────────────────────────────────
@@ -613,12 +572,18 @@ def redact_text(
     if not text or not text.strip():
         return text
 
+    always_redact = nlp_engine.load_user_list(os.path.join(os.path.dirname(__file__), "user_redact_list.txt"))
+    never_redact = nlp_engine.load_user_list(os.path.join(os.path.dirname(__file__), "user_allow_list.txt"))
+
+    text, protection_map = nlp_engine.protect_never_redact_terms(text, never_redact)
     text = _redact_pre_address_ids(text, tracker, context)
     text = _redact_addresses(text, tracker, context)
     text = _redact_entities(text, tracker, context)
     text = _redact_defined_terms(text, tracker, context)
     text = _redact_post_address_ids(text, tracker, context)
     text = _redact_names(text, tracker, context, name_config)
-    text = _redact_locations(text, tracker, context)
+    text = nlp_engine.run_second_pass(text, tracker, nlp_engine.LEGAL_NLP, nlp_engine.INDIC_PIPELINE, context)
+    text = nlp_engine.apply_user_always_redact(text, always_redact, tracker, context)
+    text = nlp_engine.unprotect_never_redact_terms(text, protection_map)
 
     return text

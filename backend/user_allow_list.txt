@@ -1,0 +1,3 @@
+# Never-redact list (allowlist): one term per line.
+# These terms will never be redacted even if a model flags them.
+# Lines starting with # are comments and are ignored.

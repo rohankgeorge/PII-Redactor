@@ -1,0 +1,3 @@
+# Always-redact list: one name or term per line.
+# These terms will be redacted even if no NLP model detects them.
+# Lines starting with # are comments and are ignored.
