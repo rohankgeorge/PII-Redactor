@@ -169,6 +169,18 @@ Fix:
    - `PII-Redactor\frontend\package-lock.json`
 3. Re-run `start_windows.bat`.
 
+### Frontend shows "All files failed to process" at `http://localhost:3000`
+Most commonly, frontend cannot reach backend.
+
+Quick checks:
+1. Make sure backend terminal is running and shows no crash tracebacks.
+2. Open `http://localhost:8000/api/` in browser. You should see JSON message.
+3. If backend is running on a different URL, create `frontend/.env` with:
+   ```env
+   REACT_APP_BACKEND_URL=http://localhost:8000
+   ```
+4. Restart frontend terminal after any `.env` change.
+
 ### Frontend opens but page is blank / errors
 1. Check backend window for errors.
 2. Make sure backend says it is running on `http://0.0.0.0:8000`.
