@@ -25,6 +25,7 @@ from indian_pii_data import (
     INDIAN_STATES,
 )
 from pii_engine import PIITracker, redact_text
+import nlp_engine
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -291,6 +292,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+
+
+@app.on_event("startup")
+async def startup_nlp_models():
+    nlp_engine.initialize_models()
 
 
 @app.on_event("shutdown")
