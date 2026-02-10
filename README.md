@@ -114,6 +114,19 @@ Fix:
 2. Enable **Add Python to PATH**.
 3. Restart Command Prompt.
 
+### `KeyError: 'MONGO_URL'` when starting backend
+This happened in older versions that required MongoDB environment variables.
+
+Fix:
+1. Pull/download the latest version of this repo (backend now has local defaults).
+2. Re-run `start_windows.bat`.
+
+Optional (if you want to set values manually), create `backend/.env` with:
+```env
+MONGO_URL=mongodb://localhost:27017
+DB_NAME=pii_redactor
+```
+
 ### `No matching distribution found for spacy-transformers==1.3.9`
 This usually means you installed an unsupported Python version (most often Python 3.14).
 
@@ -145,6 +158,16 @@ Fix:
 2. In `PII-Redactor\frontend`, delete `node_modules` folder if it exists.
 3. Delete `package-lock.json` if it exists.
 4. Run `start_windows.bat` again (it will reinstall cleanly).
+
+### `ERESOLVE` mentioning `react-day-picker` and `react@19`
+This means npm resolved React 19, but `react-day-picker@8.10.1` supports React up to 18.
+
+Fix:
+1. Pull/download the latest version of this repo (it pins React to 18).
+2. Delete old frontend install files:
+   - `PII-Redactor\frontend\node_modules`
+   - `PII-Redactor\frontend\package-lock.json`
+3. Re-run `start_windows.bat`.
 
 ### Frontend opens but page is blank / errors
 1. Check backend window for errors.
