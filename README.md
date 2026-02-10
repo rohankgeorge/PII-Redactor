@@ -146,16 +146,6 @@ Fix:
 3. Delete `package-lock.json` if it exists.
 4. Run `start_windows.bat` again (it will reinstall cleanly).
 
-### `ERESOLVE` mentioning `react-day-picker` and `react@19`
-This means npm resolved React 19, but `react-day-picker@8.10.1` supports React up to 18.
-
-Fix:
-1. Pull/download the latest version of this repo (it pins React to 18).
-2. Delete old frontend install files:
-   - `PII-Redactor\frontend\node_modules`
-   - `PII-Redactor\frontend\package-lock.json`
-3. Re-run `start_windows.bat`.
-
 ### Frontend opens but page is blank / errors
 1. Check backend window for errors.
 2. Make sure backend says it is running on `http://0.0.0.0:8000`.
