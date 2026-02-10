@@ -247,6 +247,7 @@ class NameDetectionConfig:
     use_contextual_cues: bool = True
     use_consecutive_caps: bool = True
     use_dictionary: bool = True
+    norp_category: str = "ENTITY"
 
 
 _DEFAULT_STOP_PHRASES = {
@@ -264,6 +265,13 @@ _DEFAULT_STOP_PHRASES = {
     "signing pack", "simultaneous exchange", "ancillary documents",
     "share transfer forms", "resignation letters", "proof of release",
     "joint other actions", "compliance checks", "quality assurance",
+}
+
+_NLP_LABEL_CATEGORY_MAP = {
+    "PERSON": "INDIVIDUAL",
+    "GPE": "LOCATION",
+    "LOC": "LOCATION",
+    "ORG": "ENTITY",
 }
 
 _DEFAULT_FALSE_POSITIVE_WORDS = {
@@ -293,12 +301,16 @@ def _load_name_detection_data() -> Tuple[Set[str], Set[str], NameDetectionConfig
             false_positive_words.add(word.lower().strip())
     config_data = data.get("name_detection", {})
     if isinstance(config_data, dict):
+        norp_category = config_data.get("norp_category", config.norp_category)
+        if norp_category not in {"ENTITY", "LOCATION"}:
+            norp_category = config.norp_category
         config = NameDetectionConfig(
             use_title=config_data.get("use_title", config.use_title),
             use_context_label=config_data.get("use_context_label", config.use_context_label),
             use_contextual_cues=config_data.get("use_contextual_cues", config.use_contextual_cues),
             use_consecutive_caps=config_data.get("use_consecutive_caps", config.use_consecutive_caps),
             use_dictionary=config_data.get("use_dictionary", config.use_dictionary),
+            norp_category=norp_category,
         )
     return stop_phrases, false_positive_words, config
 
@@ -540,18 +552,16 @@ def _redact_names(
     config: NameDetectionConfig = _NAME_DETECTION_CONFIG,
 ) -> str:
     """Pass 4: Detect person names and locations with spaCy + EntityRuler."""
-    _ = config
     nlp = nlp_engine.load_nlp_pipeline()
     entities = nlp_engine.detect_names_and_locations(text, nlp)
 
     for ent in sorted(entities, key=lambda item: item["start"], reverse=True):
         if _is_inside_placeholder(text, ent["start"]):
             continue
-        if ent["label"] == "PERSON":
-            category = "INDIVIDUAL"
-        elif ent["label"] in {"GPE", "LOC"}:
-            category = "LOCATION"
-        else:
+        category = _NLP_LABEL_CATEGORY_MAP.get(ent["label"])
+        if ent["label"] == "NORP":
+            category = config.norp_category
+        if not category:
             continue
         placeholder = tracker.placeholder(category, ent["text"], ctx)
         text = text[: ent["start"]] + placeholder + text[ent["end"] :]

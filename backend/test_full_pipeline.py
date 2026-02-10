@@ -64,6 +64,18 @@ test_cases = [
         "must_contain": "[REDACTED_ADDRESS",
         "must_not_contain": "Anna Salai",
     },
+    {
+        "name": "ORG/NORP detection (entity mapping)",
+        "input": "Seabrooke Apartments Owner's Association",
+        "must_contain": "[REDACTED_ENTITY",
+        "must_not_contain": None,
+    },
+    {
+        "name": "LLP/ORG detection (entity-compatible mapping)",
+        "input": "S R B C & Co. LLP",
+        "must_contain_any": ["[REDACTED_LLP", "[REDACTED_ENTITY"],
+        "must_not_contain": None,
+    },
 ]
 
 passed = 0
@@ -72,8 +84,14 @@ for tc in test_cases:
     tracker = PIITracker()
     result = redact_text(tc["input"], tracker)
     ok = True
-    if tc["must_contain"] and tc["must_contain"] not in result:
-        print(f"FAIL: {tc['name']} — expected '{tc['must_contain']}' in result")
+    must_contain = tc.get("must_contain")
+    must_contain_any = tc.get("must_contain_any")
+    if must_contain and must_contain not in result:
+        print(f"FAIL: {tc['name']} — expected '{must_contain}' in result")
+        print(f"  Got: {result}")
+        ok = False
+    if must_contain_any and not any(token in result for token in must_contain_any):
+        print(f"FAIL: {tc['name']} — expected one of {must_contain_any} in result")
         print(f"  Got: {result}")
         ok = False
     if tc["must_not_contain"] and tc["must_not_contain"] in result:
