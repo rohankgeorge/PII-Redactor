@@ -40,6 +40,30 @@ test_cases = [
         "must_contain": "[REDACTED_PHONE_NUMBER",
         "must_not_contain": "98765",
     },
+    {
+        "name": "Address detection (building + Anna Salai + masked PIN)",
+        "input": "Kasturi Buildings\n859 & 860 Anna Salai\nChennai - 6xxxxx",
+        "must_contain": "[REDACTED_ADDRESS",
+        "must_not_contain": "Anna Salai",
+    },
+    {
+        "name": "Address detection (road with building prefix and numeric suffix)",
+        "input": "Registered Office: Kasturi Buildings, 859 & 860 Anna Salai, Chennai - 600002",
+        "must_contain": "[REDACTED_ADDRESS",
+        "must_not_contain": "Kasturi Buildings",
+    },
+    {
+        "name": "Address detection (Nagar legal notice style)",
+        "input": "Address: No. 12, Lakshmi Nagar Extension, Chennai - 600034",
+        "must_contain": "[REDACTED_ADDRESS",
+        "must_not_contain": "Lakshmi Nagar",
+    },
+    {
+        "name": "Address detection (road-only line followed by more tokens)",
+        "input": "Address: Anna Salai Chennai 600002",
+        "must_contain": "[REDACTED_ADDRESS",
+        "must_not_contain": "Anna Salai",
+    },
 ]
 
 passed = 0
