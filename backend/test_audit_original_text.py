@@ -20,7 +20,7 @@ def test_tracker_placeholder_audit_includes_original_text():
 def test_potential_leak_audit_includes_original_text(monkeypatch):
     tracker = pii_engine.PIITracker()
 
-    monkeypatch.setattr(pii_engine.nlp_engine, "load_nlp_pipeline", lambda: object())
+    monkeypatch.setattr(pii_engine.nlp_engine, "load_nlp_pipeline", object)
     monkeypatch.setattr(
         pii_engine.nlp_engine,
         "detect_names_and_locations",
