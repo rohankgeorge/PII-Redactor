@@ -57,6 +57,7 @@ class PIITracker:
             "category": category,
             "placeholder": ph,
             "location": context,
+            "original_text": original,
         })
         return ph
 
@@ -83,6 +84,7 @@ class PIITracker:
             "category": f"{label_type.upper()}_ALIAS",
             "placeholder": label,
             "location": context,
+            "original_text": alias,
         })
         return label
 
@@ -879,6 +881,7 @@ def _run_final_qa(text: str, tracker: PIITracker, context: str) -> str:
                     "category": "POTENTIAL_LEAK",
                     "placeholder": f"{det['type']} ({signal['confidence']}) {det['span']}",
                     "location": context,
+                    "original_text": det["span"],
                     "severity": "REVIEW",
                     "highlight": QA_REVIEW_HIGHLIGHT_COLOR,
                 }
