@@ -156,7 +156,7 @@ def test_csv_injection_protection_original_text(monkeypatch):
     csv_response = client.get(f"/api/audit-csv/{file_id}")
     assert csv_response.status_code == 200
     csv_text = csv_response.text
-    
+
     # The formula-like value should be escaped with a tab character
     assert "\t=1+1@example.com" in csv_text
     # Should NOT contain the unescaped version at the start of a cell
@@ -209,7 +209,7 @@ def test_csv_injection_protection_all_columns(monkeypatch):
     csv_response = client.get(f"/api/audit-csv/{file_id}")
     assert csv_response.status_code == 200
     csv_text = csv_response.text
-    
+
     # All formula-like values should be tab-escaped
     assert "\t+SUSPICIOUS" in csv_text
     assert "\t=evil()" in csv_text

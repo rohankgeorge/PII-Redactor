@@ -71,7 +71,13 @@ def _sanitize_csv_cell(value) -> str:
 
 
 def _safe_writerow(writer, row):
-    """Write a CSV row with formula injection protection."""
+    """
+    Write a CSV row with formula injection protection.
+    
+    Args:
+        writer: CSV writer object
+        row: List of cell values to write
+    """
     sanitized_row = [_sanitize_csv_cell(cell) for cell in row]
     writer.writerow(sanitized_row)
 
