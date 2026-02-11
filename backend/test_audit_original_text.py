@@ -112,4 +112,106 @@ def test_batch_audit_csv_includes_original_text_column(monkeypatch):
     assert batch.status_code == 200
     text = batch.text
     assert "Document,Category,Placeholder,Location,Original Text" in text
-    assert "+91 98765 43210" in text
+    # Phone number starting with + should be escaped with tab
+    assert "\t+91 98765 43210" in text
+
+
+def test_csv_injection_protection_original_text(monkeypatch):
+    """Test that formula-like original_text values are escaped to prevent CSV injection."""
+    monkeypatch.setattr(server.nlp_engine, "initialize_models", lambda: None)
+
+    def _fake_process_document(_content: bytes):
+        doc = DocxDocument()
+        out = BytesIO()
+        doc.save(out)
+        return (
+            {"EMAIL": 1},
+            1,
+            out.getvalue(),
+            [{
+                "category": "EMAIL",
+                "placeholder": "[REDACTED_EMAIL1]",
+                "location": "Paragraph 1",
+                "original_text": "=1+1@example.com",  # Formula-like email
+            }],
+            [],
+        )
+
+    monkeypatch.setattr(server, "process_document", _fake_process_document)
+
+    client = TestClient(server.app)
+    response = client.post(
+        "/api/redact",
+        files={
+            "file": (
+                "sample.docx",
+                b"fake-docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    assert response.status_code == 200
+    file_id = response.json()["file_id"]
+
+    csv_response = client.get(f"/api/audit-csv/{file_id}")
+    assert csv_response.status_code == 200
+    csv_text = csv_response.text
+    
+    # The formula-like value should be escaped with a tab character
+    assert "\t=1+1@example.com" in csv_text
+    # Should NOT contain the unescaped version at the start of a cell
+    lines = csv_text.split('\n')
+    for line in lines:
+        # Ensure no line starts with the dangerous formula prefix without escape
+        if line.startswith("EMAIL,"):
+            assert not line.endswith(",=1+1@example.com")
+
+
+def test_csv_injection_protection_all_columns(monkeypatch):
+    """Test that formula prefixes in any column are escaped."""
+    monkeypatch.setattr(server.nlp_engine, "initialize_models", lambda: None)
+
+    def _fake_process_document(_content: bytes):
+        doc = DocxDocument()
+        out = BytesIO()
+        doc.save(out)
+        return (
+            {"+SUSPICIOUS": 1, "-CALC": 1, "@CMD": 1},
+            3,
+            out.getvalue(),
+            [
+                {
+                    "category": "+SUSPICIOUS",
+                    "placeholder": "=evil()",
+                    "location": "-location",
+                    "original_text": "@cmd",
+                },
+            ],
+            [],
+        )
+
+    monkeypatch.setattr(server, "process_document", _fake_process_document)
+
+    client = TestClient(server.app)
+    response = client.post(
+        "/api/redact",
+        files={
+            "file": (
+                "sample.docx",
+                b"fake-docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    assert response.status_code == 200
+    file_id = response.json()["file_id"]
+
+    csv_response = client.get(f"/api/audit-csv/{file_id}")
+    assert csv_response.status_code == 200
+    csv_text = csv_response.text
+    
+    # All formula-like values should be tab-escaped
+    assert "\t+SUSPICIOUS" in csv_text
+    assert "\t=evil()" in csv_text
+    assert "\t-location" in csv_text
+    assert "\t@cmd" in csv_text

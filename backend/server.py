@@ -52,6 +52,30 @@ _file_store: Dict[str, dict] = {}
 _FILE_TTL = 600  # 10 minutes
 
 
+def _sanitize_csv_cell(value) -> str:
+    """
+    Sanitize CSV cell to prevent formula injection.
+    
+    Prefixes cells starting with =, +, -, or @ with a tab character
+    to prevent spreadsheet applications from interpreting them as formulas.
+    
+    Reference: https://owasp.org/www-community/attacks/CSV_Injection
+    """
+    if value is None:
+        return ""
+    
+    str_value = str(value)
+    if str_value and str_value[0] in ('=', '+', '-', '@'):
+        return '\t' + str_value
+    return str_value
+
+
+def _safe_writerow(writer, row):
+    """Write a CSV row with formula injection protection."""
+    sanitized_row = [_sanitize_csv_cell(cell) for cell in row]
+    writer.writerow(sanitized_row)
+
+
 def _store_file(
     data: bytes,
     filename: str,
@@ -283,15 +307,15 @@ async def download_audit_csv(file_id: str):
 
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["Category", "Placeholder", "Location", "Original Text"])
+    _safe_writerow(writer, ["Category", "Placeholder", "Location", "Original Text"])
     for row in entry["audit_log"]:
-        writer.writerow([row["category"], row["placeholder"], row["location"], row.get("original_text", "")])
-    writer.writerow([])
-    writer.writerow(["Summary"])
-    writer.writerow(["Category", "Count"])
+        _safe_writerow(writer, [row["category"], row["placeholder"], row["location"], row.get("original_text", "")])
+    _safe_writerow(writer, [])
+    _safe_writerow(writer, ["Summary"])
+    _safe_writerow(writer, ["Category", "Count"])
     for cat, count in sorted(entry["stats"].items(), key=lambda x: -x[1]):
-        writer.writerow([cat, count])
-    writer.writerow(["TOTAL", entry["total"]])
+        _safe_writerow(writer, [cat, count])
+    _safe_writerow(writer, ["TOTAL", entry["total"]])
 
     csv_bytes = buf.getvalue().encode("utf-8")
     return Response(
@@ -306,33 +330,33 @@ async def download_batch_audit_csv(file_ids: List[str] = File(default=[])):
     """Generate a single audit CSV combining multiple processed files."""
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["Document", "Category", "Placeholder", "Location", "Original Text"])
+    _safe_writerow(writer, ["Document", "Category", "Placeholder", "Location", "Original Text"])
 
     for fid in file_ids:
         entry = _file_store.get(fid)
         if not entry:
             continue
         for row in entry["audit_log"]:
-            writer.writerow([entry["filename"], row["category"], row["placeholder"], row["location"], row.get("original_text", "")])
+            _safe_writerow(writer, [entry["filename"], row["category"], row["placeholder"], row["location"], row.get("original_text", "")])
 
-    writer.writerow([])
-    writer.writerow(["Summary"])
-    writer.writerow(["Document", "Total PII", "Status"])
+    _safe_writerow(writer, [])
+    _safe_writerow(writer, ["Summary"])
+    _safe_writerow(writer, ["Document", "Total PII", "Status"])
     for fid in file_ids:
         entry = _file_store.get(fid)
         if entry:
-            writer.writerow([entry["filename"], entry["total"], "Success"])
+            _safe_writerow(writer, [entry["filename"], entry["total"], "Success"])
         else:
-            writer.writerow([fid, 0, "Expired/Not Found"])
+            _safe_writerow(writer, [fid, 0, "Expired/Not Found"])
 
-    writer.writerow([])
-    writer.writerow(["Category Breakdown"])
-    writer.writerow(["Document", "Category", "Count"])
+    _safe_writerow(writer, [])
+    _safe_writerow(writer, ["Category Breakdown"])
+    _safe_writerow(writer, ["Document", "Category", "Count"])
     for fid in file_ids:
         entry = _file_store.get(fid)
         if entry:
             for cat, count in sorted(entry["stats"].items(), key=lambda x: -x[1]):
-                writer.writerow([entry["filename"], cat, count])
+                _safe_writerow(writer, [entry["filename"], cat, count])
 
     csv_bytes = buf.getvalue().encode("utf-8")
     return Response(
