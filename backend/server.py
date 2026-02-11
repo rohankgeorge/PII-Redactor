@@ -202,12 +202,10 @@ def process_pdf_document(pdf_bytes: bytes):
         has_extractable_text = True
         output_doc.add_paragraph(f"--- Page {page_num} ---")
 
-        for line_num, line in enumerate(page_text.splitlines(), start=1):
-            if not line.strip():
-                output_doc.add_paragraph("")
-                continue
-            redacted_line = redact_text(line, tracker, f"Page {page_num}, Line {line_num}")
-            output_doc.add_paragraph(redacted_line)
+        # Redact page text as a whole to preserve multi-line context.
+        redacted_page_text = redact_text(page_text, tracker, f"Page {page_num}")
+        for line in redacted_page_text.splitlines():
+            output_doc.add_paragraph(line)
 
     if not has_extractable_text:
         raise ValueError("PDF has no extractable text layer (image-based PDFs are not supported yet).")
