@@ -16,7 +16,6 @@ import tempfile
 from pathlib import Path
 from typing import Dict, List
 from docx import Document as DocxDocument
-from pypdf import PdfReader
 
 from indian_pii_data import (
     PII_REGEX_PATTERNS,
@@ -187,35 +186,6 @@ def process_document(doc_bytes: bytes):
     return tracker.stats, tracker.total, buf.read(), tracker.audit_log, tracker.qa_signals
 
 
-def process_pdf_document(pdf_bytes: bytes):
-    """Extract text from a PDF with text layers, redact it, and return DOCX bytes."""
-    reader = PdfReader(io.BytesIO(pdf_bytes))
-    tracker = PIITracker()
-    output_doc = DocxDocument()
-    has_extractable_text = False
-
-    for page_num, page in enumerate(reader.pages, start=1):
-        page_text = page.extract_text() or ""
-        if not page_text.strip():
-            continue
-
-        has_extractable_text = True
-        output_doc.add_paragraph(f"--- Page {page_num} ---")
-
-        # Redact page text as a whole to preserve multi-line context.
-        redacted_page_text = redact_text(page_text, tracker, f"Page {page_num}")
-        for line in redacted_page_text.splitlines():
-            output_doc.add_paragraph(line)
-
-    if not has_extractable_text:
-        raise ValueError("PDF has no extractable text layer (image-based PDFs are not supported yet).")
-
-    buf = io.BytesIO()
-    output_doc.save(buf)
-    buf.seek(0)
-    return tracker.stats, tracker.total, buf.read(), tracker.audit_log, tracker.qa_signals
-
-
 # ── Routes ──────────────────────────────────────────────────
 @api_router.get("/")
 async def root():
@@ -225,22 +195,19 @@ async def root():
 @api_router.post("/redact")
 async def redact_document(file: UploadFile = File(...)):
     fname = (file.filename or "").lower()
-    if not (fname.endswith(".docx") or fname.endswith(".doc") or fname.endswith(".pdf")):
-        raise HTTPException(status_code=400, detail="Only .doc, .docx, and text-based .pdf files are supported")
+    if not (fname.endswith(".docx") or fname.endswith(".doc")):
+        raise HTTPException(status_code=400, detail="Only .doc and .docx files are supported")
 
     content = await file.read()
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail="File too large. Maximum size is 10 MB.")
 
     try:
-        if fname.endswith(".pdf"):
-            stats, total, redacted_bytes, audit_log, qa_signals = process_pdf_document(content)
-        else:
-            # Convert legacy .doc → .docx when needed
-            if fname.endswith(".doc") and not fname.endswith(".docx"):
-                content = convert_doc_to_docx(content)
+        # Convert legacy .doc → .docx when needed
+        if fname.endswith(".doc") and not fname.endswith(".docx"):
+            content = convert_doc_to_docx(content)
 
-            stats, total, redacted_bytes, audit_log, qa_signals = process_document(content)
+        stats, total, redacted_bytes, audit_log, qa_signals = process_document(content)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
