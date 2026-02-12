@@ -240,7 +240,7 @@ async def redact_document(file: UploadFile = File(...)):
             if fname.endswith(".doc") and not fname.endswith(".docx"):
                 content = convert_doc_to_docx(content)
 
-            stats, total, redacted_bytes, audit_log, qa_signals = process_document(content)
+        stats, total, redacted_bytes, audit_log, qa_signals = process_document(content)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -283,9 +283,9 @@ async def download_audit_csv(file_id: str):
 
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["Category", "Placeholder", "Location"])
+    writer.writerow(["Category", "Placeholder", "Location", "Original Text"])
     for row in entry["audit_log"]:
-        writer.writerow([row["category"], row["placeholder"], row["location"]])
+        writer.writerow([row["category"], row["placeholder"], row["location"], row.get("original_text", "")])
     writer.writerow([])
     writer.writerow(["Summary"])
     writer.writerow(["Category", "Count"])
@@ -306,14 +306,14 @@ async def download_batch_audit_csv(file_ids: List[str] = File(default=[])):
     """Generate a single audit CSV combining multiple processed files."""
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["Document", "Category", "Placeholder", "Location"])
+    writer.writerow(["Document", "Category", "Placeholder", "Location", "Original Text"])
 
     for fid in file_ids:
         entry = _file_store.get(fid)
         if not entry:
             continue
         for row in entry["audit_log"]:
-            writer.writerow([entry["filename"], row["category"], row["placeholder"], row["location"]])
+            writer.writerow([entry["filename"], row["category"], row["placeholder"], row["location"], row.get("original_text", "")])
 
     writer.writerow([])
     writer.writerow(["Summary"])
