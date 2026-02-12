@@ -80,7 +80,7 @@ It will open terminal windows and do setup automatically:
 - start backend on port `8000`
 - start frontend on port `3000`
 
-Supported uploads: `.doc`, `.docx`, and text-based `.pdf` (image-only/scanned PDFs are not supported yet).
+Supported uploads: `.doc` and `.docx` files.
 
 ### First run can take several minutes
 This is normal.
