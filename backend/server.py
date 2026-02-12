@@ -14,7 +14,8 @@ import base64
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
+from pydantic import BaseModel
 from docx import Document as DocxDocument
 from pypdf import PdfReader
 
@@ -27,6 +28,7 @@ from indian_pii_data import (
 )
 from pii_engine import PIITracker, redact_text
 import nlp_engine
+import rule_library
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -44,6 +46,19 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+class RuleCreateRequest(BaseModel):
+    term: str
+    mode: str
+    enabled: bool = True
+
+
+class RuleUpdateRequest(BaseModel):
+    term: Optional[str] = None
+    mode: Optional[str] = None
+    enabled: Optional[bool] = None
+
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
@@ -240,7 +255,7 @@ async def redact_document(file: UploadFile = File(...)):
             if fname.endswith(".doc") and not fname.endswith(".docx"):
                 content = convert_doc_to_docx(content)
 
-        stats, total, redacted_bytes, audit_log, qa_signals = process_document(content)
+            stats, total, redacted_bytes, audit_log, qa_signals = process_document(content)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -261,6 +276,39 @@ async def redact_document(file: UploadFile = File(...)):
         "audit_log": audit_log,
         "review": _portable_review_payload(audit_log, qa_signals),
     }
+
+
+@api_router.get("/rules")
+async def list_rules():
+    return {"rules": rule_library.list_rules()}
+
+
+@api_router.post("/rules")
+async def create_rule(payload: RuleCreateRequest):
+    try:
+        rule = rule_library.create_rule(payload.term, payload.mode, payload.enabled)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"rule": rule}
+
+
+@api_router.put("/rules/{rule_id}")
+async def update_rule(rule_id: str, payload: RuleUpdateRequest):
+    try:
+        rule = rule_library.update_rule(rule_id, payload.term, payload.mode, payload.enabled)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"rule": rule}
+
+
+@api_router.delete("/rules/{rule_id}")
+async def delete_rule(rule_id: str):
+    deleted = rule_library.delete_rule(rule_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="rule not found")
+    return {"deleted": True, "rule_id": rule_id}
 
 
 @api_router.get("/download/{file_id}")
@@ -358,6 +406,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_nlp_models():
+    rule_library.initialize(ROOT_DIR)
     nlp_engine.initialize_models()
 
 
