@@ -90,6 +90,7 @@ python-docx==1.2.0
 python-dotenv==1.2.1
 python-jose==3.5.0
 python-multipart==0.0.22
+pypdf==5.6.1
 pytokens==0.4.1
 PyYAML==6.0.3
 referencing==0.37.0

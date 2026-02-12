@@ -27,7 +27,7 @@ export default function UploadZone({ onFileSelect }) {
           Redact Indian PII
         </h1>
         <p className="text-base sm:text-lg text-muted-foreground leading-relaxed">
-          Upload Word documents and instantly replace all Indian personally identifiable
+          Upload Word or text-based PDF documents and instantly replace all Indian personally identifiable
           information with categorized placeholders, making them safe for LLM processing.
         </p>
       </div>
@@ -64,14 +64,14 @@ export default function UploadZone({ onFileSelect }) {
           {dragging ? "Drop to scan" : "Drop your documents here"}
         </p>
         <p className="text-sm text-muted-foreground">
-          .doc &amp; .docx supported &middot; multiple files &middot; max 10 MB each
+          .doc, .docx &amp; text-based .pdf supported &middot; multiple files &middot; max 10 MB each
         </p>
       </div>
 
       <input
         ref={inputRef}
         type="file"
-        accept=".docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword"
+        accept=".docx,.doc,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,application/pdf"
         multiple
         className="hidden"
         data-testid="file-input"

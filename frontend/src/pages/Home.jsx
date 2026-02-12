@@ -18,10 +18,10 @@ export default function Home() {
   const handleFileSelect = useCallback(async (files) => {
     const valid = Array.from(files).filter((f) => {
       const n = f.name.toLowerCase();
-      return n.endsWith(".docx") || n.endsWith(".doc");
+      return n.endsWith(".docx") || n.endsWith(".doc") || n.endsWith(".pdf");
     });
     if (!valid.length) {
-      toast.error("Only .doc and .docx files are supported");
+      toast.error("Only .doc, .docx, and text-based .pdf files are supported");
       return;
     }
     const oversized = valid.filter((f) => f.size > 10 * 1024 * 1024);
