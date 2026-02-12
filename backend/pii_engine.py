@@ -22,6 +22,7 @@ from global_pii_data import (
 )
 
 import nlp_engine
+import rule_library
 
 
 # ────────────────────────────────────────────────────────────
@@ -57,6 +58,7 @@ class PIITracker:
             "category": category,
             "placeholder": ph,
             "location": context,
+            "original_text": original,
         })
         return ph
 
@@ -83,6 +85,7 @@ class PIITracker:
             "category": f"{label_type.upper()}_ALIAS",
             "placeholder": label,
             "location": context,
+            "original_text": alias,
         })
         return label
 
@@ -879,6 +882,7 @@ def _run_final_qa(text: str, tracker: PIITracker, context: str) -> str:
                     "category": "POTENTIAL_LEAK",
                     "placeholder": f"{det['type']} ({signal['confidence']}) {det['span']}",
                     "location": context,
+                    "original_text": det["span"],
                     "severity": "REVIEW",
                     "highlight": QA_REVIEW_HIGHLIGHT_COLOR,
                 }
@@ -902,8 +906,7 @@ def redact_text(
     if not text or not text.strip():
         return text
 
-    always_redact = nlp_engine.load_user_list(os.path.join(os.path.dirname(__file__), "user_redact_list.txt"))
-    never_redact = nlp_engine.load_user_list(os.path.join(os.path.dirname(__file__), "user_allow_list.txt"))
+    always_redact, never_redact = rule_library.get_term_sets()
 
     text, protection_map = nlp_engine.protect_never_redact_terms(text, never_redact)
     text = _redact_pre_address_ids(text, tracker, context)

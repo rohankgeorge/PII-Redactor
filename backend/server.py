@@ -14,8 +14,10 @@ import base64
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
+from pydantic import BaseModel
 from docx import Document as DocxDocument
+from pypdf import PdfReader
 
 from indian_pii_data import (
     PII_REGEX_PATTERNS,
@@ -26,6 +28,7 @@ from indian_pii_data import (
 )
 from pii_engine import PIITracker, redact_text
 import nlp_engine
+import rule_library
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -43,6 +46,19 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+class RuleCreateRequest(BaseModel):
+    term: str
+    mode: str
+    enabled: bool = True
+
+
+class RuleUpdateRequest(BaseModel):
+    term: Optional[str] = None
+    mode: Optional[str] = None
+    enabled: Optional[bool] = None
+
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
@@ -186,6 +202,35 @@ def process_document(doc_bytes: bytes):
     return tracker.stats, tracker.total, buf.read(), tracker.audit_log, tracker.qa_signals
 
 
+def process_pdf_document(pdf_bytes: bytes):
+    """Extract text from a PDF with text layers, redact it, and return DOCX bytes."""
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    tracker = PIITracker()
+    output_doc = DocxDocument()
+    has_extractable_text = False
+
+    for page_num, page in enumerate(reader.pages, start=1):
+        page_text = page.extract_text() or ""
+        if not page_text.strip():
+            continue
+
+        has_extractable_text = True
+        output_doc.add_paragraph(f"--- Page {page_num} ---")
+
+        # Redact page text as a whole to preserve multi-line context.
+        redacted_page_text = redact_text(page_text, tracker, f"Page {page_num}")
+        for line in redacted_page_text.splitlines():
+            output_doc.add_paragraph(line)
+
+    if not has_extractable_text:
+        raise ValueError("PDF has no extractable text layer (image-based PDFs are not supported yet).")
+
+    buf = io.BytesIO()
+    output_doc.save(buf)
+    buf.seek(0)
+    return tracker.stats, tracker.total, buf.read(), tracker.audit_log, tracker.qa_signals
+
+
 # ── Routes ──────────────────────────────────────────────────
 @api_router.get("/")
 async def root():
@@ -195,19 +240,24 @@ async def root():
 @api_router.post("/redact")
 async def redact_document(file: UploadFile = File(...)):
     fname = (file.filename or "").lower()
-    if not (fname.endswith(".docx") or fname.endswith(".doc")):
-        raise HTTPException(status_code=400, detail="Only .doc and .docx files are supported")
+    if not (fname.endswith(".docx") or fname.endswith(".doc") or fname.endswith(".pdf")):
+        raise HTTPException(status_code=400, detail="Only .doc, .docx, and text-based .pdf files are supported")
 
     content = await file.read()
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail="File too large. Maximum size is 10 MB.")
 
     try:
-        # Convert legacy .doc → .docx when needed
-        if fname.endswith(".doc") and not fname.endswith(".docx"):
-            content = convert_doc_to_docx(content)
+        if fname.endswith(".pdf"):
+            stats, total, redacted_bytes, audit_log, qa_signals = process_pdf_document(content)
+        else:
+            # Convert legacy .doc → .docx when needed
+            if fname.endswith(".doc") and not fname.endswith(".docx"):
+                content = convert_doc_to_docx(content)
 
-        stats, total, redacted_bytes, audit_log, qa_signals = process_document(content)
+            stats, total, redacted_bytes, audit_log, qa_signals = process_document(content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         logger.error("Document processing failed: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Processing failed: {exc}")
@@ -226,6 +276,39 @@ async def redact_document(file: UploadFile = File(...)):
         "audit_log": audit_log,
         "review": _portable_review_payload(audit_log, qa_signals),
     }
+
+
+@api_router.get("/rules")
+async def list_rules():
+    return {"rules": rule_library.list_rules()}
+
+
+@api_router.post("/rules")
+async def create_rule(payload: RuleCreateRequest):
+    try:
+        rule = rule_library.create_rule(payload.term, payload.mode, payload.enabled)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"rule": rule}
+
+
+@api_router.put("/rules/{rule_id}")
+async def update_rule(rule_id: str, payload: RuleUpdateRequest):
+    try:
+        rule = rule_library.update_rule(rule_id, payload.term, payload.mode, payload.enabled)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"rule": rule}
+
+
+@api_router.delete("/rules/{rule_id}")
+async def delete_rule(rule_id: str):
+    deleted = rule_library.delete_rule(rule_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="rule not found")
+    return {"deleted": True, "rule_id": rule_id}
 
 
 @api_router.get("/download/{file_id}")
@@ -248,9 +331,9 @@ async def download_audit_csv(file_id: str):
 
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["Category", "Placeholder", "Location"])
+    writer.writerow(["Category", "Placeholder", "Location", "Original Text"])
     for row in entry["audit_log"]:
-        writer.writerow([row["category"], row["placeholder"], row["location"]])
+        writer.writerow([row["category"], row["placeholder"], row["location"], row.get("original_text", "")])
     writer.writerow([])
     writer.writerow(["Summary"])
     writer.writerow(["Category", "Count"])
@@ -271,14 +354,14 @@ async def download_batch_audit_csv(file_ids: List[str] = File(default=[])):
     """Generate a single audit CSV combining multiple processed files."""
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["Document", "Category", "Placeholder", "Location"])
+    writer.writerow(["Document", "Category", "Placeholder", "Location", "Original Text"])
 
     for fid in file_ids:
         entry = _file_store.get(fid)
         if not entry:
             continue
         for row in entry["audit_log"]:
-            writer.writerow([entry["filename"], row["category"], row["placeholder"], row["location"]])
+            writer.writerow([entry["filename"], row["category"], row["placeholder"], row["location"], row.get("original_text", "")])
 
     writer.writerow([])
     writer.writerow(["Summary"])
@@ -323,6 +406,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_nlp_models():
+    rule_library.initialize(ROOT_DIR)
     nlp_engine.initialize_models()
 
 
