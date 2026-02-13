@@ -67,8 +67,6 @@ def normalize_candidate(raw_value: str) -> str | None:
     cleaned = " ".join(part for part in value.split(" ") if part)
     if len(cleaned) < 2:
         return None
-    if " " not in cleaned and len(cleaned) <= 1:
-        return None
     return cleaned.title()
 
 
