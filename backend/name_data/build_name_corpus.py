@@ -73,13 +73,15 @@ def fetch_text(url: str) -> str:
                 delay = min(delay, MAX_RETRY_DELAY)
                 print(f"Rate limited (attempt {attempt + 1}/{MAX_RETRIES}). "
                       f"Retrying in {delay}s...")
-                time.sleep(delay)
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(delay)
             elif 500 <= e.code < 600:
                 # Server error - retry with exponential backoff
                 delay = min(INITIAL_RETRY_DELAY * (2 ** attempt), MAX_RETRY_DELAY)
                 print(f"Server error {e.code} (attempt {attempt + 1}/{MAX_RETRIES}). "
                       f"Retrying in {delay}s...")
-                time.sleep(delay)
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(delay)
             else:
                 # Client error (4xx) - don't retry
                 raise RuntimeError(f"HTTP error {e.code} fetching {url}: {e.reason}") from e
@@ -89,10 +91,8 @@ def fetch_text(url: str) -> str:
             delay = min(INITIAL_RETRY_DELAY * (2 ** attempt), MAX_RETRY_DELAY)
             print(f"Network error (attempt {attempt + 1}/{MAX_RETRIES}): {e.reason}. "
                   f"Retrying in {delay}s...")
-            time.sleep(delay)
-        except Exception as e:
-            # Unexpected error - don't retry
-            raise RuntimeError(f"Unexpected error fetching {url}: {e}") from e
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(delay)
     
     # All retries exhausted
     raise RuntimeError(
