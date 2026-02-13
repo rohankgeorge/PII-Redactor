@@ -1,23 +1,16 @@
-"""Build deterministic local Indian name artifacts from upstream public datasets."""
+"""Build deterministic local Indian name artifacts from committed raw datasets."""
 
 from __future__ import annotations
 
 import csv
 import io
-import json
 import re
-import urllib.request
 from pathlib import Path
 from typing import Iterable
 
 DATA_DIR = Path(__file__).resolve().parent
-
-GIST_URL = "https://api.github.com/gists/7f86ca901fe41bc14a63"
-SURNAMES_REPO_CSV_URL = (
-    "https://raw.githubusercontent.com/merishnaSuwal/indian_surnames_data/master/"
-    "indian_caste_data.csv"
-)
-NAMES_REPO_CONTENTS_URL = "https://api.github.com/repos/MASTREX/List-of-Indian-Names/contents"
+RAW_DATA_DIR = DATA_DIR.parent.parent / "data" / "raw_names"
+MASTREX_DIR = RAW_DATA_DIR / "mastrex"
 
 NOISE_TOKENS = {
     "",
@@ -42,15 +35,6 @@ VALID_CHARS_RE = re.compile(r"^[A-Za-z .\-'`]+$")
 HAS_DIGIT_RE = re.compile(r"\d")
 
 
-def fetch_text(url: str) -> str:
-    with urllib.request.urlopen(url, timeout=30) as response:
-        return response.read().decode("utf-8", "ignore")
-
-
-def fetch_json(url: str) -> dict:
-    return json.loads(fetch_text(url))
-
-
 def normalize_candidate(raw_value: str) -> str | None:
     value = WHITESPACE_RE.sub(" ", raw_value.strip())
     if not value:
@@ -69,11 +53,12 @@ def normalize_candidate(raw_value: str) -> str | None:
         return None
     return cleaned.title()
 
+def split_csv_variants(raw_value: str) -> list[str]:
+    return [part.strip() for part in raw_value.split(",") if part.strip()]
+
 
 def parse_mbejda_gist() -> tuple[set[str], set[str], set[str]]:
-    payload = fetch_json(GIST_URL)
-    raw_url = payload["files"]["Indian-Male-Names.csv"]["raw_url"]
-    content = fetch_text(raw_url)
+    content = (RAW_DATA_DIR / "mbejda_indian_male_names.csv").read_text(encoding="utf-8")
 
     first_names: set[str] = set()
     reader = csv.DictReader(io.StringIO(content))
@@ -85,30 +70,27 @@ def parse_mbejda_gist() -> tuple[set[str], set[str], set[str]]:
 
 
 def parse_indian_surnames_repo() -> tuple[set[str], set[str], set[str]]:
-    content = fetch_text(SURNAMES_REPO_CSV_URL)
+    content = (RAW_DATA_DIR / "merishna_indian_caste_data.csv").read_text(encoding="utf-8")
     reader = csv.DictReader(io.StringIO(content))
 
     surnames: set[str] = set()
     for row in reader:
-        candidate = normalize_candidate(row.get("caste", ""))
-        if candidate:
-            surnames.add(candidate)
+        raw_caste = row.get("caste", "")
+        for variant in split_csv_variants(raw_caste):
+            candidate = normalize_candidate(variant)
+            if candidate:
+                surnames.add(candidate)
     return set(), surnames, set()
 
 
 def parse_mastrex_names_repo() -> tuple[set[str], set[str], set[str]]:
-    contents = fetch_json(NAMES_REPO_CONTENTS_URL)
-
     first_names: set[str] = set()
     surnames: set[str] = set()
     neutral: set[str] = set()
 
-    for item in contents:
-        if item.get("type") != "file" or not item.get("name", "").lower().endswith(".txt"):
-            continue
-
-        file_name = item["name"]
-        file_text = fetch_text(item["download_url"])
+    for file_path in sorted(MASTREX_DIR.glob("*.txt")):
+        file_name = file_path.name
+        file_text = file_path.read_text(encoding="utf-8")
         lines = file_text.splitlines()
 
         target: set[str] | None = None
@@ -151,7 +133,7 @@ def main() -> None:
     merged_surnames: set[str] = set()
     merged_neutral: set[str] = set()
 
-    print("Building Indian name corpus from upstream sources...\n")
+    print(f"Building Indian name corpus from committed raw sources in {RAW_DATA_DIR}...\n")
     for source_name, parser in source_parsers.items():
         first, surnames, neutral = parser()
         merged_first |= first

@@ -219,11 +219,15 @@ To refresh locally generated Indian name artifacts under `backend/name_data/`, r
 python backend/name_data/build_name_corpus.py
 ```
 
-This build script pulls and parses data from these upstream sources:
+This build script reads and parses committed raw source files from `data/raw_names/`.
 
-- Gist dataset: https://gist.github.com/mbejda/7f86ca901fe41bc14a63
-- Indian surnames dataset: https://github.com/merishnaSuwal/indian_surnames_data
-- List of Indian names dataset: https://github.com/MASTREX/List-of-Indian-Names
+Canonical raw-source strategy:
+- Raw CSV/TXT inputs are committed under `data/raw_names/`.
+- `backend/name_data/build_name_corpus.py` reads only local committed raw files.
+- Upstream links are retained for provenance only:
+  - Gist dataset: https://gist.github.com/mbejda/7f86ca901fe41bc14a63
+  - Indian surnames dataset: https://github.com/merishnaSuwal/indian_surnames_data
+  - List of Indian names dataset: https://github.com/MASTREX/List-of-Indian-Names
 
 For reproducibility, the script prints per-source counts and final unique counts, and writes deterministic sorted CSV outputs.
 
