@@ -211,6 +211,24 @@ Rules:
 
 ---
 
+## Rebuild the Indian name corpus data
+
+To refresh locally generated Indian name artifacts under `backend/name_data/`, run:
+
+```bash
+python backend/name_data/build_name_corpus.py
+```
+
+This build script pulls and parses data from these upstream sources:
+
+- Gist dataset: https://gist.github.com/mbejda/7f86ca901fe41bc14a63
+- Indian surnames dataset: https://github.com/merishnaSuwal/indian_surnames_data
+- List of Indian names dataset: https://github.com/MASTREX/List-of-Indian-Names
+
+For reproducibility, the script prints per-source counts and final unique counts, and writes deterministic sorted CSV outputs.
+
+---
+
 ## Optional models
 
 OpenNyAI Legal NER (optional):
