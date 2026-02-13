@@ -38,10 +38,12 @@ def _read_name_column(csv_path: Path) -> set[str]:
 
 
 def load_all_indian_names() -> tuple[set[str], set[str]]:
-    male = _read_name_column(DATA_DIR / "indian_male_names.csv")
-    female = _read_name_column(DATA_DIR / "indian_female_names.csv")
-    surnames = _read_name_column(DATA_DIR / "indian_surnames.csv")
-    first_names = male | female
+    # Neutral names are included in first-name patterns to reduce missed detections
+    # for names that are commonly used across genders.
+    first_names_merged = _read_name_column(DATA_DIR / "indian_first_names_merged.csv")
+    neutral = _read_name_column(DATA_DIR / "indian_neutral_names.csv")
+    surnames = _read_name_column(DATA_DIR / "indian_surnames_merged.csv")
+    first_names = first_names_merged | neutral
     return first_names, surnames
 
 
