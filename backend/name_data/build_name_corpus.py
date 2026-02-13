@@ -33,6 +33,8 @@ NOISE_TOKENS = {
 WHITESPACE_RE = re.compile(r"\s+")
 VALID_CHARS_RE = re.compile(r"^[A-Za-z .\-'`]+$")
 HAS_DIGIT_RE = re.compile(r"\d")
+
+
 def normalize_candidate(raw_value: str) -> str | None:
     value = WHITESPACE_RE.sub(" ", raw_value.strip())
     if not value:
@@ -50,6 +52,9 @@ def normalize_candidate(raw_value: str) -> str | None:
     if len(cleaned) < 2:
         return None
     return cleaned.title()
+
+def split_csv_variants(raw_value: str) -> list[str]:
+    return [part.strip() for part in raw_value.split(",") if part.strip()]
 
 
 def parse_mbejda_gist() -> tuple[set[str], set[str], set[str]]:
@@ -70,9 +75,11 @@ def parse_indian_surnames_repo() -> tuple[set[str], set[str], set[str]]:
 
     surnames: set[str] = set()
     for row in reader:
-        candidate = normalize_candidate(row.get("caste", ""))
-        if candidate:
-            surnames.add(candidate)
+        raw_caste = row.get("caste", "")
+        for variant in split_csv_variants(raw_caste):
+            candidate = normalize_candidate(variant)
+            if candidate:
+                surnames.add(candidate)
     return set(), surnames, set()
 
 
