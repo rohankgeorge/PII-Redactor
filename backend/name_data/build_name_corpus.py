@@ -12,6 +12,10 @@ from typing import Iterable
 
 DATA_DIR = Path(__file__).resolve().parent
 
+# Network timeout in seconds for fetching remote resources
+# Set to a high value to accommodate large files and slow network conditions
+REQUEST_TIMEOUT = 120
+
 GIST_URL = "https://api.github.com/gists/7f86ca901fe41bc14a63"
 SURNAMES_REPO_CSV_URL = (
     "https://raw.githubusercontent.com/merishnaSuwal/indian_surnames_data/master/"
@@ -43,7 +47,7 @@ HAS_DIGIT_RE = re.compile(r"\d")
 
 
 def fetch_text(url: str) -> str:
-    with urllib.request.urlopen(url, timeout=30) as response:
+    with urllib.request.urlopen(url, timeout=REQUEST_TIMEOUT) as response:
         return response.read().decode("utf-8", "ignore")
 
 
