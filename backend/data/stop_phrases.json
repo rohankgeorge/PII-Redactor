@@ -66,6 +66,12 @@
     "use_context_label": true,
     "use_contextual_cues": true,
     "use_consecutive_caps": true,
-    "use_dictionary": true
-  }
+    "use_dictionary": true,
+    "min_single_token_length": 3
+  },
+  "deny_redact_lexicon": [
+    "ToS",
+    "Dataset",
+    "IP"
+  ]
 }

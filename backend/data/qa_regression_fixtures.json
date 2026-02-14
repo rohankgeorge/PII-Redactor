@@ -10,5 +10,21 @@
   {
     "name": "nagar_extension_address",
     "input": "Address: No. 12, Lakshmi Nagar Extension, Chennai - 600034. Authorized signatory Dr. Priya Menon"
+  },
+  {
+    "name": "deny_lexicon_tos_dataset_ip",
+    "input": "The ToS for this Dataset covers IP ownership clauses.",
+    "must_remain_unredacted": [
+      "ToS",
+      "Dataset",
+      "IP"
+    ]
+  },
+  {
+    "name": "short_single_token_initial_not_force_redacted",
+    "input": "Signatory initials: Al confirmed review.",
+    "must_remain_unredacted": [
+      "Al"
+    ]
   }
 ]
