@@ -122,19 +122,22 @@ def convert_doc_to_docx(doc_bytes: bytes) -> bytes:
             tmp_path = tmp.name
 
         env = {**os.environ, "HOME": "/tmp"}
-        result = subprocess.run(
-            ["antiword", tmp_path],
-            capture_output=True, text=True, timeout=30, env=env,
-        )
-        if result.returncode != 0:
-            # Fallback: try reading as plain text
-            logger.warning("antiword failed, attempting plain-text fallback: %s", result.stderr.strip())
-            try:
+        try:
+            result = subprocess.run(
+                ["antiword", tmp_path],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env=env,
+            )
+            if result.returncode != 0:
+                logger.warning("antiword failed, attempting plain-text fallback: %s", result.stderr.strip())
                 text = doc_bytes.decode("utf-8", errors="ignore")
-            except Exception:
-                text = doc_bytes.decode("latin-1", errors="ignore")
-        else:
-            text = result.stdout
+            else:
+                text = result.stdout
+        except FileNotFoundError:
+            logger.warning("antiword executable not found; using plain-text fallback for .doc conversion")
+            text = doc_bytes.decode("utf-8", errors="ignore")
 
         doc = DocxDocument()
         for line in text.split("\n"):
