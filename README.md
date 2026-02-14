@@ -230,6 +230,7 @@ Canonical raw-source strategy:
   - List of Indian names dataset: https://github.com/MASTREX/List-of-Indian-Names
 
 For reproducibility, the script prints per-source counts and final unique counts, and writes deterministic sorted CSV outputs.
+The build script writes merged CSVs that are consumed by `name_data/load_names.py` to populate EntityRuler/SpanRuler name patterns.
 
 ---
 
