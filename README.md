@@ -198,6 +198,61 @@ Quick fix:
 
 ---
 
+
+## Pre-redaction review pipeline (analyze → apply)
+
+The app now supports a two-step flow that lets you review redaction candidates before finalizing output:
+
+1. **Analyze** (`POST /api/analyze`) uploads a document, runs detection, and returns:
+   - `analysis_id`
+   - `candidates` (with `candidate_id`, category, placeholder, location, policy tags)
+   - review metadata (`review`, `qa_signals`, `audit_log`)
+2. **Apply redaction** (`POST /api/apply-redaction`) uses the `analysis_id` to produce the downloadable redacted file and supports:
+   - Candidate filtering with `include_candidate_ids` **or** `exclude_candidate_ids`
+   - Policy toggles: `redact_locations` and `redact_countries`
+
+Backward compatibility is preserved:
+- **`POST /api/redact`** still works as the one-shot endpoint for the existing frontend and older clients.
+
+### Quick API examples
+
+Analyze:
+
+```bash
+curl -X POST http://localhost:8000/api/analyze \
+  -F "file=@sample.docx"
+```
+
+Apply all candidates:
+
+```bash
+curl -X POST http://localhost:8000/api/apply-redaction \
+  -H "Content-Type: application/json" \
+  -d '{"analysis_id":"<analysis_id>"}'
+```
+
+Apply with policy toggles:
+
+```bash
+curl -X POST http://localhost:8000/api/apply-redaction \
+  -H "Content-Type: application/json" \
+  -d '{"analysis_id":"<analysis_id>","redact_locations":false,"redact_countries":false}'
+```
+
+### Pipeline test commands
+
+From the repository root:
+
+```bash
+pytest -q backend/test_analysis_pipeline.py
+```
+
+Optional broader validation:
+
+```bash
+pytest -q backend/test_analysis_pipeline.py backend/test_audit_original_text.py
+```
+
 ## Optional custom word lists
 
 You can customize what should always or never be redacted:
