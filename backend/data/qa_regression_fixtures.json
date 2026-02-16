@@ -26,5 +26,17 @@
     "must_remain_unredacted": [
       "Al"
     ]
+  },
+  {
+    "name": "deny_lexicon_contract_abbreviations_and_boilerplate",
+    "input": "The MSA and SOW include SLA and KPI metrics, plus Force Majeure and Governing Law provisions.",
+    "must_remain_unredacted": [
+      "MSA",
+      "SOW",
+      "SLA",
+      "KPI",
+      "Force Majeure",
+      "Governing Law"
+    ]
   }
 ]
