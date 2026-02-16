@@ -60,10 +60,15 @@ class RuleUpdateRequest(BaseModel):
     enabled: Optional[bool] = None
 
 
+class ApplyRedactionRequest(BaseModel):
+    analysis_id: str
+
+
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
 # ── Temporary in-memory file store for reliable downloads ────
 _file_store: Dict[str, dict] = {}
+_analysis_store: Dict[str, dict] = {}
 _FILE_TTL = 600  # 10 minutes
 
 
@@ -105,11 +110,82 @@ def _portable_review_payload(audit_log: list, qa_signals: list) -> dict:
     }
 
 
+def _store_analysis(
+    source_bytes: bytes,
+    source_name: str,
+    source_type: str,
+    stats: dict,
+    total: int,
+    audit_log: list,
+    qa_signals: list,
+) -> str:
+    """Store analyzed source material for a later apply-redaction step."""
+    _cleanup_expired()
+    analysis_id = uuid.uuid4().hex
+    _analysis_store[analysis_id] = {
+        "source_bytes": source_bytes,
+        "source_name": source_name,
+        "source_type": source_type,
+        "stats": stats,
+        "total": total,
+        "audit_log": audit_log,
+        "qa_signals": qa_signals,
+        "review": _portable_review_payload(audit_log, qa_signals),
+        "created": time.time(),
+    }
+    return analysis_id
+
+
 def _cleanup_expired():
     now = time.time()
     expired = [k for k, v in _file_store.items() if now - v["created"] > _FILE_TTL]
     for k in expired:
         del _file_store[k]
+    expired_analysis = [k for k, v in _analysis_store.items() if now - v["created"] > _FILE_TTL]
+    for k in expired_analysis:
+        del _analysis_store[k]
+
+
+async def _validate_upload_and_read(file: UploadFile) -> tuple[str, bytes]:
+    """Validate supported file extension and upload size, then read bytes."""
+    fname = (file.filename or "").lower()
+    if not (fname.endswith(".docx") or fname.endswith(".doc") or fname.endswith(".pdf")):
+        raise HTTPException(status_code=400, detail="Only .doc, .docx, and text-based .pdf files are supported")
+
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="File too large. Maximum size is 10 MB.")
+    return fname, content
+
+
+def _run_redaction(content: bytes, fname: str):
+    """Run the redaction engine for DOC/DOCX/PDF bytes and return pipeline outputs."""
+    if fname.endswith(".pdf"):
+        return process_pdf_document(content)
+
+    # Convert legacy .doc → .docx when needed
+    if fname.endswith(".doc") and not fname.endswith(".docx"):
+        content = convert_doc_to_docx(content)
+
+    return process_document(content)
+
+
+def _build_redact_response(source_filename: str, redacted_bytes: bytes, stats: dict, total: int, audit_log: list, qa_signals: list):
+    """Store redacted bytes and return standard API response payload."""
+    original_stem = (source_filename or "document").rsplit(".", 1)[0]
+    filename = f"redacted_{original_stem}.docx"
+
+    file_id = _store_file(redacted_bytes, filename, audit_log, stats, total, qa_signals)
+
+    return {
+        "stats": stats,
+        "total": total,
+        "qa_signals": qa_signals,
+        "file_id": file_id,
+        "filename": filename,
+        "audit_log": audit_log,
+        "review": _portable_review_payload(audit_log, qa_signals),
+    }
 
 
 # ── .doc → .docx conversion ─────────────────────────────────
@@ -242,43 +318,65 @@ async def root():
 
 @api_router.post("/redact")
 async def redact_document(file: UploadFile = File(...)):
-    fname = (file.filename or "").lower()
-    if not (fname.endswith(".docx") or fname.endswith(".doc") or fname.endswith(".pdf")):
-        raise HTTPException(status_code=400, detail="Only .doc, .docx, and text-based .pdf files are supported")
-
-    content = await file.read()
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail="File too large. Maximum size is 10 MB.")
-
     try:
-        if fname.endswith(".pdf"):
-            stats, total, redacted_bytes, audit_log, qa_signals = process_pdf_document(content)
-        else:
-            # Convert legacy .doc → .docx when needed
-            if fname.endswith(".doc") and not fname.endswith(".docx"):
-                content = convert_doc_to_docx(content)
-
-            stats, total, redacted_bytes, audit_log, qa_signals = process_document(content)
+        fname, content = await _validate_upload_and_read(file)
+        stats, total, redacted_bytes, audit_log, qa_signals = _run_redaction(content, fname)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         logger.error("Document processing failed: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Processing failed: {exc}")
 
-    original_stem = (file.filename or "document").rsplit(".", 1)[0]
-    filename = f"redacted_{original_stem}.docx"
+    return _build_redact_response(file.filename or "document", redacted_bytes, stats, total, audit_log, qa_signals)
 
-    file_id = _store_file(redacted_bytes, filename, audit_log, stats, total, qa_signals)
 
+@api_router.post("/analyze")
+async def analyze_document(file: UploadFile = File(...)):
+    """Analyze an uploaded file and stage it for explicit apply-redaction."""
+    try:
+        fname, content = await _validate_upload_and_read(file)
+        stats, total, _redacted_bytes, audit_log, qa_signals = _run_redaction(content, fname)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.error("Document analysis failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}")
+
+    analysis_id = _store_analysis(content, file.filename or "document", fname, stats, total, audit_log, qa_signals)
     return {
+        "analysis_id": analysis_id,
+        "source_filename": file.filename or "document",
         "stats": stats,
         "total": total,
         "qa_signals": qa_signals,
-        "file_id": file_id,
-        "filename": filename,
         "audit_log": audit_log,
         "review": _portable_review_payload(audit_log, qa_signals),
     }
+
+
+@api_router.post("/apply-redaction")
+async def apply_redaction(payload: ApplyRedactionRequest):
+    """Apply redaction to a previously analyzed document and return downloadable artifact."""
+    _cleanup_expired()
+    analysis_entry = _analysis_store.get(payload.analysis_id)
+    if not analysis_entry:
+        raise HTTPException(status_code=404, detail="Analysis expired or not found. Please re-analyze.")
+
+    try:
+        stats, total, redacted_bytes, audit_log, qa_signals = _run_redaction(
+            analysis_entry["source_bytes"],
+            analysis_entry["source_type"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.error("Document apply-redaction failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Apply redaction failed: {exc}")
+
+    source_name = analysis_entry["source_name"]
+    response_payload = _build_redact_response(source_name, redacted_bytes, stats, total, audit_log, qa_signals)
+    response_payload["analysis_id"] = payload.analysis_id
+    return response_payload
 
 
 @api_router.get("/rules")
