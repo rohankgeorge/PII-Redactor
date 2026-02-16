@@ -64,6 +64,8 @@ class ApplyRedactionRequest(BaseModel):
     analysis_id: str
     include_candidate_ids: Optional[List[str]] = Field(default=None)
     exclude_candidate_ids: Optional[List[str]] = Field(default=None)
+    redact_locations: bool = True
+    redact_countries: bool = True
 
     @model_validator(mode="after")
     def validate_filters(self):
@@ -129,6 +131,7 @@ def _build_candidates(audit_log: list) -> list:
         if not placeholder or not original_text:
             continue
         candidate_id = f"cand_{index:05d}"
+        policy_tags = _policy_tags_for_row(row)
         candidates.append(
             {
                 "candidate_id": candidate_id,
@@ -136,9 +139,54 @@ def _build_candidates(audit_log: list) -> list:
                 "placeholder": placeholder,
                 "original_text": original_text,
                 "location": row.get("location", ""),
+                "policy_tags": policy_tags,
             }
         )
     return candidates
+
+
+_COUNTRY_TERMS = {
+    "india",
+    "united states",
+    "united states of america",
+    "usa",
+    "uk",
+    "united kingdom",
+    "england",
+    "scotland",
+    "wales",
+    "ireland",
+    "australia",
+    "canada",
+    "singapore",
+    "uae",
+    "united arab emirates",
+    "germany",
+    "france",
+    "spain",
+    "italy",
+    "china",
+    "japan",
+    "south korea",
+    "russia",
+    "brazil",
+    "south africa",
+}
+
+
+def _policy_tags_for_row(row: dict) -> list[str]:
+    """Assign policy tags so apply-redaction can toggle location/country categories."""
+    category = str(row.get("category", "")).upper().strip()
+    original_text = str(row.get("original_text", "")).strip().casefold()
+    tags: set[str] = set()
+
+    if category in {"LOCATION", "ADDRESS"}:
+        tags.add("location")
+
+    if category == "LOCATION" and original_text in _COUNTRY_TERMS:
+        tags.add("country")
+
+    return sorted(tags)
 
 
 def _store_analysis(
@@ -232,15 +280,23 @@ def _filter_analysis_for_apply(analysis_entry: dict, payload: ApplyRedactionRequ
     include_ids = set(payload.include_candidate_ids or [])
     exclude_ids = set(payload.exclude_candidate_ids or [])
 
+    policy_excluded_ids: set[str] = set()
+    for candidate in candidates:
+        tags = set(candidate.get("policy_tags") or [])
+        if not payload.redact_locations and "location" in tags:
+            policy_excluded_ids.add(candidate["candidate_id"])
+        if not payload.redact_countries and "country" in tags:
+            policy_excluded_ids.add(candidate["candidate_id"])
+
     if include_ids and not include_ids.issubset(candidate_lookup.keys()):
         raise HTTPException(status_code=400, detail="Unknown candidate id in include_candidate_ids")
     if exclude_ids and not exclude_ids.issubset(candidate_lookup.keys()):
         raise HTTPException(status_code=400, detail="Unknown candidate id in exclude_candidate_ids")
 
     if include_ids:
-        deselected_ids = set(candidate_lookup.keys()) - include_ids
+        deselected_ids = (set(candidate_lookup.keys()) - include_ids) | (policy_excluded_ids - include_ids)
     else:
-        deselected_ids = exclude_ids
+        deselected_ids = exclude_ids | policy_excluded_ids
 
     if not deselected_ids:
         return (

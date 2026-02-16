@@ -171,3 +171,87 @@ def test_apply_redaction_rejects_unknown_candidate_id(monkeypatch):
     )
     assert applied.status_code == 400
     assert "unknown candidate id" in applied.json()["detail"].lower()
+
+
+def _fake_process_document_with_location(_content: bytes):
+    doc = DocxDocument()
+    doc.add_paragraph("[REDACTED_LOCATION1] [REDACTED_INDIVIDUAL1]")
+    out = BytesIO()
+    doc.save(out)
+    return (
+        {"LOCATION": 1, "INDIVIDUAL": 1},
+        2,
+        out.getvalue(),
+        [
+            {
+                "category": "LOCATION",
+                "placeholder": "[REDACTED_LOCATION1]",
+                "location": "Paragraph 1",
+                "original_text": "India",
+            },
+            {
+                "category": "INDIVIDUAL",
+                "placeholder": "[REDACTED_INDIVIDUAL1]",
+                "location": "Paragraph 1",
+                "original_text": "Alice",
+            },
+        ],
+        [],
+    )
+
+
+def test_analyze_candidates_include_policy_tags(monkeypatch):
+    monkeypatch.setattr(server.nlp_engine, "initialize_models", lambda: None)
+    monkeypatch.setattr(server, "process_document", _fake_process_document_with_location)
+
+    client = TestClient(server.app)
+    analyzed = client.post(
+        "/api/analyze",
+        files={
+            "file": (
+                "policy.docx",
+                b"fake-docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    assert analyzed.status_code == 200
+
+    candidates = analyzed.json()["candidates"]
+    location_candidate = next(candidate for candidate in candidates if candidate["category"] == "LOCATION")
+    assert set(location_candidate["policy_tags"]) == {"country", "location"}
+
+
+def test_apply_redaction_policy_toggle_excludes_locations(monkeypatch):
+    monkeypatch.setattr(server.nlp_engine, "initialize_models", lambda: None)
+    monkeypatch.setattr(server, "process_document", _fake_process_document_with_location)
+
+    client = TestClient(server.app)
+    analyzed = client.post(
+        "/api/analyze",
+        files={
+            "file": (
+                "policy.docx",
+                b"fake-docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    assert analyzed.status_code == 200
+    analysis_id = analyzed.json()["analysis_id"]
+
+    applied = client.post(
+        "/api/apply-redaction",
+        json={
+            "analysis_id": analysis_id,
+            "redact_locations": False,
+            "redact_countries": False,
+        },
+    )
+    assert applied.status_code == 200
+
+    payload = applied.json()
+    assert payload["total"] == 1
+    assert payload["stats"] == {"INDIVIDUAL": 1}
+    assert len(payload["audit_log"]) == 1
+    assert payload["audit_log"][0]["category"] == "INDIVIDUAL"
