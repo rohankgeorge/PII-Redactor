@@ -173,6 +173,60 @@ def test_apply_redaction_rejects_unknown_candidate_id(monkeypatch):
     assert "unknown candidate id" in applied.json()["detail"].lower()
 
 
+def test_apply_redaction_rejects_mixed_include_and_exclude_filters(monkeypatch):
+    monkeypatch.setattr(server.nlp_engine, "initialize_models", lambda: None)
+    monkeypatch.setattr(server, "process_document", _fake_process_document)
+
+    client = TestClient(server.app)
+    analyzed = client.post(
+        "/api/analyze",
+        files={
+            "file": (
+                "mixed-filters.docx",
+                b"fake-docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    assert analyzed.status_code == 200
+    analysis_payload = analyzed.json()
+    candidate_id = analysis_payload["candidates"][0]["candidate_id"]
+
+    applied = client.post(
+        "/api/apply-redaction",
+        json={
+            "analysis_id": analysis_payload["analysis_id"],
+            "include_candidate_ids": [candidate_id],
+            "exclude_candidate_ids": [candidate_id],
+        },
+    )
+    assert applied.status_code == 422
+
+
+def test_redact_endpoint_remains_compatible(monkeypatch):
+    monkeypatch.setattr(server.nlp_engine, "initialize_models", lambda: None)
+    monkeypatch.setattr(server, "process_document", _fake_process_document)
+
+    client = TestClient(server.app)
+    response = client.post(
+        "/api/redact",
+        files={
+            "file": (
+                "compat.docx",
+                b"fake-docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["file_id"]
+    assert payload["filename"].startswith("redacted_compat")
+    assert payload["stats"] == {"INDIVIDUAL": 1}
+    assert payload["total"] == 1
+
+
 def _fake_process_document_with_location(_content: bytes):
     doc = DocxDocument()
     doc.add_paragraph("[REDACTED_LOCATION1] [REDACTED_INDIVIDUAL1]")
@@ -188,6 +242,39 @@ def _fake_process_document_with_location(_content: bytes):
                 "placeholder": "[REDACTED_LOCATION1]",
                 "location": "Paragraph 1",
                 "original_text": "India",
+            },
+            {
+                "category": "INDIVIDUAL",
+                "placeholder": "[REDACTED_INDIVIDUAL1]",
+                "location": "Paragraph 1",
+                "original_text": "Alice",
+            },
+        ],
+        [],
+    )
+
+
+def _fake_process_document_with_city_and_country(_content: bytes):
+    doc = DocxDocument()
+    doc.add_paragraph("[REDACTED_LOCATION1] [REDACTED_LOCATION2] [REDACTED_INDIVIDUAL1]")
+    out = BytesIO()
+    doc.save(out)
+    return (
+        {"LOCATION": 2, "INDIVIDUAL": 1},
+        3,
+        out.getvalue(),
+        [
+            {
+                "category": "LOCATION",
+                "placeholder": "[REDACTED_LOCATION1]",
+                "location": "Paragraph 1",
+                "original_text": "India",
+            },
+            {
+                "category": "LOCATION",
+                "placeholder": "[REDACTED_LOCATION2]",
+                "location": "Paragraph 1",
+                "original_text": "Mumbai",
             },
             {
                 "category": "INDIVIDUAL",
@@ -255,3 +342,38 @@ def test_apply_redaction_policy_toggle_excludes_locations(monkeypatch):
     assert payload["stats"] == {"INDIVIDUAL": 1}
     assert len(payload["audit_log"]) == 1
     assert payload["audit_log"][0]["category"] == "INDIVIDUAL"
+
+
+def test_apply_redaction_country_toggle_only_keeps_city_redacted(monkeypatch):
+    monkeypatch.setattr(server.nlp_engine, "initialize_models", lambda: None)
+    monkeypatch.setattr(server, "process_document", _fake_process_document_with_city_and_country)
+
+    client = TestClient(server.app)
+    analyzed = client.post(
+        "/api/analyze",
+        files={
+            "file": (
+                "country-policy.docx",
+                b"fake-docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    assert analyzed.status_code == 200
+    analysis_id = analyzed.json()["analysis_id"]
+
+    applied = client.post(
+        "/api/apply-redaction",
+        json={
+            "analysis_id": analysis_id,
+            "redact_countries": False,
+        },
+    )
+    assert applied.status_code == 200
+
+    payload = applied.json()
+    assert payload["total"] == 2
+    assert payload["stats"] == {"INDIVIDUAL": 1, "LOCATION": 1}
+    location_rows = [row for row in payload["audit_log"] if row["category"] == "LOCATION"]
+    assert len(location_rows) == 1
+    assert location_rows[0]["original_text"] == "Mumbai"
