@@ -179,6 +179,12 @@ _STREET_SUFFIX = (
     r"Drive|Dr\.?|Court|Ct\.?|Way|Parkway|Pkwy\.?|Place|Pl\.?|Terrace|Ter\.?|"
     r"Salai|Sarai|Bazaar|Nagar|Marg|Highway|Expressway|Bypass|Cross|Layout|Colony)"
 )
+_ROAD_STREET_SUFFIX = (
+    r"(?:Street|Road|Rd\.?|Avenue|Ave\.?|Boulevard|Blvd\.?|Lane|Ln\.?|"
+    r"Drive|Dr\.?|Court|Ct\.?|Way|Parkway|Pkwy\.?|Place|Terrace|Ter\.?|"
+    r"Salai|Sarai|Bazaar|Nagar|Marg|Highway|Expressway|Bypass|Cross|Layout|Colony|"
+    r"(?:St\.?|Pl\.?)(?=(?:\s*,|\s+\d|\s*(?:-|–)\s*(?:[1-9]\d{2}\s?\d{3}|[1-9][xX*]{5})\b|\s+(?:pin|pincode|zip)\b|$)))"
+)
 _GLOBAL_POSTAL_PATTERN = rf"(?:{US_ZIP_PATTERN}|{UK_POSTCODE_PATTERN})"
 _PIN_PATTERN = r"[1-9]\d{2}\s?\d{3}"
 _PIN_OR_MASKED_PATTERN = rf"(?:{_PIN_PATTERN}|[1-9][xX*]{{5}})"
@@ -215,12 +221,12 @@ GENERAL_ADDRESS_PATTERN = re.compile(
 
 # Road-starting address (Magadi Main Road ... PIN)
 ROAD_ADDRESS_PATTERN = re.compile(
-    r"(?:^|(?<=\s)|(?<=:)|(?<=\n))"
+    r"(?:^|(?<=\n)|(?<=:)|(?<=;)|(?<=,)|(?<=\())"
     r"(?:[A-Z][\w&().,'/\-]*(?:\s+[A-Z0-9][\w&().,'/\-]*){0,5}\s*,\s*)?"
     + _ADDR_START
     + r"(?:\d+[A-Za-z]?(?:\s*(?:&|/|-)\s*\d+[A-Za-z]?)*\s+)?"
     + r"[A-Za-z0-9][\w.'\-/]*(?:\s+[A-Za-z0-9][\w.'\-/]*){0,6}\s+"
-    + _STREET_SUFFIX
+    + _ROAD_STREET_SUFFIX
     + r"[\s,]+[\w][\w\s,./\-\'()\&:;]*?"
     + r"[\s,\-–]*"
     + _PIN_OR_MASKED_PATTERN
@@ -231,12 +237,12 @@ ROAD_ADDRESS_PATTERN = re.compile(
 # Standalone road/street line guarded by address cues or list markers
 ROAD_ONLY_CONTEXT_PATTERN = re.compile(
     r"(?im)"
-    r"(?P<prefix>(?:^|\n)\s*(?:(?:[A-Z]|[0-9])\.\s*)?"
+    r"(?P<prefix>(?:^|\n)\s*(?![^\n]*\b(?:formed|authorize(?:d)?|with\s+you\s+as)\b)(?:(?:[A-Z]|[0-9])\.\s*)?"
     r"(?:(?:residing\s+at|address|residence|located\s+at)\s*[:\-–]\s*)?)"
     r"(?P<road>[A-Za-z0-9][\w.'-]*(?:\s+[A-Za-z0-9][\w.'-]*)*\s+"
-    + _STREET_SUFFIX
+    + _ROAD_STREET_SUFFIX
     + r")"
-    r"(?=\s*(?:$|\n|[,;]|[-–]|\d|[A-Za-z]))"
+    r"(?=\s*(?:$|\n|[,;]|[-–]|\d))"
 )
 
 # Location-based address (named place, ... PIN)
@@ -559,6 +565,19 @@ def _score_address_candidate(candidate: str) -> int:
         score += 1
     if candidate.count("\n") >= 1:
         score += 1
+
+    has_pin_or_zip = bool(
+        re.search(_PIN_OR_MASKED_PATTERN, candidate)
+        or re.search(r"\b(?:pin|pincode|zip)\b\s*[:\-]?\s*\d{5,6}\b", lowered)
+    )
+    has_house_marker = bool(
+        re.search(r"\b(?:no\.?|flat|door|house|plot|block|sy\.?\s*no\.?|s\.?\s*no\.?)\b\s*[#:\-]?\s*[a-z]?\d", lowered)
+    )
+    has_ordinal_street = bool(
+        re.search(r"\b\d+(?:st|nd|rd|th)\b[\w\s,.'\-/]{0,20}\b(?:street|st\.?|road|rd\.?|lane|ln\.?|place|pl\.?)\b", lowered)
+    )
+    if not (has_pin_or_zip or has_house_marker or has_ordinal_street):
+        score = min(score, 5)
 
     return score
 
