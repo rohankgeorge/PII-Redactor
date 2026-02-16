@@ -15,7 +15,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 from docx import Document as DocxDocument
 from pypdf import PdfReader
 
@@ -62,6 +62,14 @@ class RuleUpdateRequest(BaseModel):
 
 class ApplyRedactionRequest(BaseModel):
     analysis_id: str
+    include_candidate_ids: Optional[List[str]] = Field(default=None)
+    exclude_candidate_ids: Optional[List[str]] = Field(default=None)
+
+    @model_validator(mode="after")
+    def validate_filters(self):
+        if self.include_candidate_ids and self.exclude_candidate_ids:
+            raise ValueError("Provide either include_candidate_ids or exclude_candidate_ids, not both")
+        return self
 
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
@@ -110,14 +118,39 @@ def _portable_review_payload(audit_log: list, qa_signals: list) -> dict:
     }
 
 
+def _build_candidates(audit_log: list) -> list:
+    """Build redaction candidates from detected audit rows for explicit apply-time filtering."""
+    candidates = []
+    for index, row in enumerate(audit_log, start=1):
+        if row.get("category") == "POTENTIAL_LEAK":
+            continue
+        placeholder = row.get("placeholder", "")
+        original_text = row.get("original_text", "")
+        if not placeholder or not original_text:
+            continue
+        candidate_id = f"cand_{index:05d}"
+        candidates.append(
+            {
+                "candidate_id": candidate_id,
+                "category": row.get("category", "UNKNOWN"),
+                "placeholder": placeholder,
+                "original_text": original_text,
+                "location": row.get("location", ""),
+            }
+        )
+    return candidates
+
+
 def _store_analysis(
     source_bytes: bytes,
+    redacted_bytes: bytes,
     source_name: str,
     source_type: str,
     stats: dict,
     total: int,
     audit_log: list,
     qa_signals: list,
+    candidates: list,
 ) -> str:
     """Store analyzed source material for a later apply-redaction step."""
     _cleanup_expired()
@@ -126,14 +159,123 @@ def _store_analysis(
         "source_bytes": source_bytes,
         "source_name": source_name,
         "source_type": source_type,
+        "redacted_bytes": redacted_bytes,
         "stats": stats,
         "total": total,
         "audit_log": audit_log,
         "qa_signals": qa_signals,
+        "candidates": candidates,
         "review": _portable_review_payload(audit_log, qa_signals),
         "created": time.time(),
     }
     return analysis_id
+
+
+def _apply_placeholder_reverts(redacted_docx_bytes: bytes, rows_to_revert: list[dict]) -> bytes:
+    """Restore selected placeholders back to original text inside a DOCX artifact."""
+    if not rows_to_revert:
+        return redacted_docx_bytes
+
+    replacement_map = {
+        row["placeholder"]: row.get("original_text", "")
+        for row in rows_to_revert
+        if row.get("placeholder") and row.get("original_text")
+    }
+    if not replacement_map:
+        return redacted_docx_bytes
+
+    doc = DocxDocument(io.BytesIO(redacted_docx_bytes))
+
+    def replace_text(value: str) -> str:
+        updated = value
+        for placeholder, original_text in replacement_map.items():
+            updated = updated.replace(placeholder, original_text)
+        return updated
+
+    def rewrite_paragraph(para):
+        if not para.text:
+            return
+        new_text = replace_text(para.text)
+        if new_text == para.text:
+            return
+        if para.runs:
+            for index, run in enumerate(para.runs):
+                run.text = new_text if index == 0 else ""
+        else:
+            para.add_run(new_text)
+
+    for para in doc.paragraphs:
+        rewrite_paragraph(para)
+
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for para in cell.paragraphs:
+                    rewrite_paragraph(para)
+
+    for section in doc.sections:
+        for para in section.header.paragraphs:
+            rewrite_paragraph(para)
+        for para in section.footer.paragraphs:
+            rewrite_paragraph(para)
+
+    out = io.BytesIO()
+    doc.save(out)
+    out.seek(0)
+    return out.read()
+
+
+def _filter_analysis_for_apply(analysis_entry: dict, payload: ApplyRedactionRequest) -> tuple[bytes, dict, int, list]:
+    """Apply candidate include/exclude filters and return updated output material."""
+    candidates = analysis_entry.get("candidates", [])
+    candidate_lookup = {candidate["candidate_id"]: candidate for candidate in candidates}
+    include_ids = set(payload.include_candidate_ids or [])
+    exclude_ids = set(payload.exclude_candidate_ids or [])
+
+    if include_ids and not include_ids.issubset(candidate_lookup.keys()):
+        raise HTTPException(status_code=400, detail="Unknown candidate id in include_candidate_ids")
+    if exclude_ids and not exclude_ids.issubset(candidate_lookup.keys()):
+        raise HTTPException(status_code=400, detail="Unknown candidate id in exclude_candidate_ids")
+
+    if include_ids:
+        deselected_ids = set(candidate_lookup.keys()) - include_ids
+    else:
+        deselected_ids = exclude_ids
+
+    if not deselected_ids:
+        return (
+            analysis_entry["redacted_bytes"],
+            analysis_entry["stats"],
+            analysis_entry["total"],
+            analysis_entry["audit_log"],
+        )
+
+    deselected_placeholders = {
+        candidate_lookup[candidate_id]["placeholder"]
+        for candidate_id in deselected_ids
+    }
+    rows_to_revert = [
+        row
+        for row in analysis_entry["audit_log"]
+        if row.get("placeholder") in deselected_placeholders
+    ]
+
+    filtered_audit_log = [
+        row
+        for row in analysis_entry["audit_log"]
+        if row.get("placeholder") not in deselected_placeholders
+    ]
+    filtered_stats = {}
+    filtered_total = 0
+    for row in filtered_audit_log:
+        category = row.get("category")
+        if not category or category == "POTENTIAL_LEAK":
+            continue
+        filtered_stats[category] = filtered_stats.get(category, 0) + 1
+        filtered_total += 1
+
+    filtered_bytes = _apply_placeholder_reverts(analysis_entry["redacted_bytes"], rows_to_revert)
+    return filtered_bytes, filtered_stats, filtered_total, filtered_audit_log
 
 
 def _cleanup_expired():
@@ -335,14 +477,25 @@ async def analyze_document(file: UploadFile = File(...)):
     """Analyze an uploaded file and stage it for explicit apply-redaction."""
     try:
         fname, content = await _validate_upload_and_read(file)
-        stats, total, _redacted_bytes, audit_log, qa_signals = _run_redaction(content, fname)
+        stats, total, redacted_bytes, audit_log, qa_signals = _run_redaction(content, fname)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         logger.error("Document analysis failed: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}")
 
-    analysis_id = _store_analysis(content, file.filename or "document", fname, stats, total, audit_log, qa_signals)
+    candidates = _build_candidates(audit_log)
+    analysis_id = _store_analysis(
+        content,
+        redacted_bytes,
+        file.filename or "document",
+        fname,
+        stats,
+        total,
+        audit_log,
+        qa_signals,
+        candidates,
+    )
     return {
         "analysis_id": analysis_id,
         "source_filename": file.filename or "document",
@@ -350,6 +503,7 @@ async def analyze_document(file: UploadFile = File(...)):
         "total": total,
         "qa_signals": qa_signals,
         "audit_log": audit_log,
+        "candidates": candidates,
         "review": _portable_review_payload(audit_log, qa_signals),
     }
 
@@ -363,17 +517,15 @@ async def apply_redaction(payload: ApplyRedactionRequest):
         raise HTTPException(status_code=404, detail="Analysis expired or not found. Please re-analyze.")
 
     try:
-        stats, total, redacted_bytes, audit_log, qa_signals = _run_redaction(
-            analysis_entry["source_bytes"],
-            analysis_entry["source_type"],
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        redacted_bytes, stats, total, audit_log = _filter_analysis_for_apply(analysis_entry, payload)
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error("Document apply-redaction failed: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Apply redaction failed: {exc}")
+        raise HTTPException(status_code=500, detail="Apply redaction failed")
 
     source_name = analysis_entry["source_name"]
+    qa_signals = analysis_entry.get("qa_signals", [])
     response_payload = _build_redact_response(source_name, redacted_bytes, stats, total, audit_log, qa_signals)
     response_payload["analysis_id"] = payload.analysis_id
     return response_payload
