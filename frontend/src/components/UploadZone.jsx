@@ -1,7 +1,7 @@
 import { useCallback, useState, useRef } from "react";
 import { Upload, FileText } from "lucide-react";
 
-export default function UploadZone({ onFileSelect }) {
+export default function UploadZone({ onFileSelect, allowMultiple = true }) {
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef(null);
 
@@ -64,7 +64,7 @@ export default function UploadZone({ onFileSelect }) {
           {dragging ? "Drop to scan" : "Drop your documents here"}
         </p>
         <p className="text-sm text-muted-foreground">
-          .doc, .docx &amp; text-based .pdf supported &middot; multiple files &middot; max 10 MB each
+          .doc, .docx &amp; text-based .pdf supported &middot; {allowMultiple ? "multiple files" : "single file"} &middot; max 10 MB each
         </p>
       </div>
 
@@ -72,7 +72,7 @@ export default function UploadZone({ onFileSelect }) {
         ref={inputRef}
         type="file"
         accept=".docx,.doc,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,application/pdf"
-        multiple
+        multiple={allowMultiple}
         className="hidden"
         data-testid="file-input"
         onChange={(e) => e.target.files?.length && onFileSelect(e.target.files)}
