@@ -20,18 +20,11 @@ LEGAL_MODEL_WHL = (
     "https://huggingface.co/opennyaiorg/en_legal_ner_trf/resolve/main/"
     "en_legal_ner_trf-any-py3-none-any.whl"
 )
-_PLACEHOLDER_PATTERN = re.compile(r"\[REDACTED_[A-Z_]+\d+\]")
+from placeholder_utils import is_inside_placeholder as _is_inside_placeholder
 
 NLP = None
 LEGAL_NLP = None
 INDIC_PIPELINE = None
-
-
-def _is_inside_placeholder(text: str, start: int) -> bool:
-    for m in _PLACEHOLDER_PATTERN.finditer(text):
-        if m.start() <= start < m.end():
-            return True
-    return False
 
 
 def _build_person_patterns(first_names: set[str], surnames: set[str]) -> list[dict]:

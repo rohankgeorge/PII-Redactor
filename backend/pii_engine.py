@@ -23,6 +23,7 @@ from global_pii_data import (
 
 import nlp_engine
 import rule_library
+from placeholder_utils import is_inside_placeholder as _is_inside_placeholder, is_placeholder_internal_text
 
 
 # ────────────────────────────────────────────────────────────
@@ -851,7 +852,12 @@ def _run_final_qa(text: str, tracker: PIITracker, context: str) -> str:
     filtered: list[dict] = []
     for det in sorted(detections, key=lambda item: (-item["confidence"], item["start"], -(item["end"] - item["start"]))):
         span = det["span"].strip()
-        if not span or "[REDACTED_" in span or _is_inside_placeholder(text, det["start"]):
+        if (
+            not span
+            or "[REDACTED_" in span
+            or is_placeholder_internal_text(span)
+            or _is_inside_placeholder(text, det["start"])
+        ):
             continue
         if len(span) <= 2:
             continue
