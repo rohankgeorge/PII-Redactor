@@ -88,3 +88,86 @@ def test_apply_redaction_from_analysis_returns_downloadable_result(monkeypatch):
     assert payload["file_id"]
     assert payload["filename"].startswith("redacted_contract")
     assert payload["total"] == 1
+
+
+def test_analyze_returns_candidates(monkeypatch):
+    monkeypatch.setattr(server.nlp_engine, "initialize_models", lambda: None)
+    monkeypatch.setattr(server, "process_document", _fake_process_document)
+
+    client = TestClient(server.app)
+    response = client.post(
+        "/api/analyze",
+        files={
+            "file": (
+                "candidate.docx",
+                b"fake-docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["candidates"]) == 1
+    assert payload["candidates"][0]["category"] == "INDIVIDUAL"
+    assert payload["candidates"][0]["candidate_id"].startswith("cand_")
+
+
+def test_apply_redaction_exclude_candidate_restores_original(monkeypatch):
+    monkeypatch.setattr(server.nlp_engine, "initialize_models", lambda: None)
+    monkeypatch.setattr(server, "process_document", _fake_process_document)
+
+    client = TestClient(server.app)
+    analyzed = client.post(
+        "/api/analyze",
+        files={
+            "file": (
+                "filter.docx",
+                b"fake-docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    assert analyzed.status_code == 200
+    analysis_payload = analyzed.json()
+    candidate_id = analysis_payload["candidates"][0]["candidate_id"]
+
+    applied = client.post(
+        "/api/apply-redaction",
+        json={
+            "analysis_id": analysis_payload["analysis_id"],
+            "exclude_candidate_ids": [candidate_id],
+        },
+    )
+    assert applied.status_code == 200
+
+    payload = applied.json()
+    assert payload["total"] == 0
+    assert payload["stats"] == {}
+    assert payload["audit_log"] == []
+
+
+def test_apply_redaction_rejects_unknown_candidate_id(monkeypatch):
+    monkeypatch.setattr(server.nlp_engine, "initialize_models", lambda: None)
+    monkeypatch.setattr(server, "process_document", _fake_process_document)
+
+    client = TestClient(server.app)
+    analyzed = client.post(
+        "/api/analyze",
+        files={
+            "file": (
+                "unknown-id.docx",
+                b"fake-docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    assert analyzed.status_code == 200
+    analysis_id = analyzed.json()["analysis_id"]
+
+    applied = client.post(
+        "/api/apply-redaction",
+        json={"analysis_id": analysis_id, "exclude_candidate_ids": ["cand_99999"]},
+    )
+    assert applied.status_code == 400
+    assert "unknown candidate id" in applied.json()["detail"].lower()
