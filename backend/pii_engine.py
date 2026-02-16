@@ -297,6 +297,7 @@ class NameDetectionConfig:
     use_consecutive_caps: bool = True
     use_dictionary: bool = True
     norp_category: str = "ENTITY"
+    min_single_token_length: int = 3
 
 
 _DEFAULT_STOP_PHRASES = {
@@ -328,11 +329,32 @@ _DEFAULT_FALSE_POSITIVE_WORDS = {
     "section", "clause", "exhibit", "recital", "party",
 }
 
+_DEFAULT_DENY_REDACT_LEXICON = {
+    "tos",
+    "dataset",
+    "ip",
+}
+
+_DENY_REDACT_LEXICON: Set[str] = set(_DEFAULT_DENY_REDACT_LEXICON)
+
+_ENTITY_LABEL_CONFIDENCE = {
+    "PERSON": 0.9,
+    "ORG": 0.84,
+    "GPE": 0.76,
+    "LOC": 0.76,
+    "NORP": 0.68,
+}
+
+NAME_AUTO_REDACT_THRESHOLD = 0.8
+
 
 def _load_name_detection_data() -> Tuple[Set[str], Set[str], NameDetectionConfig]:
     stop_phrases = {phrase.lower() for phrase in _DEFAULT_STOP_PHRASES}
     false_positive_words = {word.lower() for word in _DEFAULT_FALSE_POSITIVE_WORDS}
+    global _DENY_REDACT_LEXICON
+
     config = NameDetectionConfig()
+    deny_redact_lexicon = set(_DEFAULT_DENY_REDACT_LEXICON)
     data_path = os.path.join(os.path.dirname(__file__), "data", "stop_phrases.json")
     try:
         with open(data_path, "r", encoding="utf-8") as handle:
@@ -348,6 +370,9 @@ def _load_name_detection_data() -> Tuple[Set[str], Set[str], NameDetectionConfig
     for word in data.get("false_positive_name_words", []):
         if isinstance(word, str):
             false_positive_words.add(word.lower().strip())
+    for term in data.get("deny_redact_lexicon", []):
+        if isinstance(term, str) and term.strip():
+            deny_redact_lexicon.add(term.lower().strip())
     config_data = data.get("name_detection", {})
     if isinstance(config_data, dict):
         norp_category = config_data.get("norp_category", config.norp_category)
@@ -360,7 +385,9 @@ def _load_name_detection_data() -> Tuple[Set[str], Set[str], NameDetectionConfig
             use_consecutive_caps=config_data.get("use_consecutive_caps", config.use_consecutive_caps),
             use_dictionary=config_data.get("use_dictionary", config.use_dictionary),
             norp_category=norp_category,
+            min_single_token_length=max(1, int(config_data.get("min_single_token_length", config.min_single_token_length))),
         )
+    _DENY_REDACT_LEXICON = deny_redact_lexicon
     return stop_phrases, false_positive_words, config
 
 
@@ -722,10 +749,22 @@ def _redact_names(
     tracker: PIITracker,
     ctx: str,
     config: NameDetectionConfig = _NAME_DETECTION_CONFIG,
+    force_redact_terms: Set[str] | None = None,
 ) -> str:
     """Pass 4: Detect person names and locations with spaCy + EntityRuler."""
     nlp = nlp_engine.load_nlp_pipeline()
     entities = nlp_engine.detect_names_and_locations(text, nlp)
+    force_keys = {term.casefold() for term in (force_redact_terms or set()) if term.strip()}
+
+    def _lexically_valid(candidate: str) -> tuple[bool, str]:
+        normalized = " ".join(candidate.split())
+        words = re.findall(r"[A-Za-z0-9']+", normalized)
+        lowered = normalized.casefold()
+        if len(words) == 1 and len(words[0]) < config.min_single_token_length and lowered not in force_keys:
+            return False, "SINGLE_TOKEN_TOO_SHORT"
+        if lowered in _DENY_REDACT_LEXICON:
+            return False, "DENY_REDACT_LEXICON"
+        return True, "PASS"
 
     for ent in sorted(entities, key=lambda item: item["start"], reverse=True):
         if _is_inside_placeholder(text, ent["start"]):
@@ -734,6 +773,22 @@ def _redact_names(
         if ent["label"] == "NORP":
             category = config.norp_category
         if not category:
+            continue
+        lexical_valid, reason = _lexically_valid(ent["text"])
+        confidence = _ENTITY_LABEL_CONFIDENCE.get(ent["label"], 0.7)
+        candidate_action = "AUTO_REDACT" if lexical_valid and confidence >= NAME_AUTO_REDACT_THRESHOLD else "REVIEW_ONLY"
+        tracker.qa_signals.append(
+            {
+                "type": category,
+                "span": ent["text"],
+                "confidence": round(confidence, 2),
+                "source": "NAME_PREVALIDATION",
+                "action": candidate_action,
+                "reason": reason,
+                "location": ctx,
+            }
+        )
+        if candidate_action != "AUTO_REDACT":
             continue
         placeholder = tracker.placeholder(category, ent["text"], ctx)
         text = text[: ent["start"]] + placeholder + text[ent["end"] :]
@@ -920,7 +975,7 @@ def redact_text(
     text = _redact_entities(text, tracker, context)
     text = _redact_defined_terms(text, tracker, context)
     text = _redact_post_address_ids(text, tracker, context)
-    text = _redact_names(text, tracker, context, name_config)
+    text = _redact_names(text, tracker, context, name_config, always_redact)
     text = nlp_engine.run_second_pass(text, tracker, nlp_engine.LEGAL_NLP, nlp_engine.INDIC_PIPELINE, context)
     text = nlp_engine.apply_user_always_redact(text, always_redact, tracker, context)
     text = _run_final_qa(text, tracker, context)

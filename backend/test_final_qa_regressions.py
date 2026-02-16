@@ -22,7 +22,11 @@ def test_final_qa_returns_signals_for_regression_fixtures():
         tracker = PIITracker()
         redacted = redact_text(fixture["input"], tracker, context=f"Fixture: {fixture['name']}")
 
-        assert "[REDACTED_" in redacted
+        if fixture.get("must_remain_unredacted"):
+            for term in fixture["must_remain_unredacted"]:
+                assert term in redacted
+        else:
+            assert "[REDACTED_" in redacted
         assert tracker.qa_signals is not None
         assert all({"type", "span", "confidence", "action", "severity", "highlight"}.issubset(signal) for signal in tracker.qa_signals)
 
