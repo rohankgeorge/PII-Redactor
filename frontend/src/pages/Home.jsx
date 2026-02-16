@@ -19,6 +19,10 @@ export default function Home() {
   const [fileNames, setFileNames] = useState([]);
   const [reviewModeEnabled, setReviewModeEnabled] = useState(false);
   const [reviewState, setReviewState] = useState(null);
+  const [policyOptions, setPolicyOptions] = useState({
+    redactLocations: true,
+    redactCountries: true,
+  });
 
   // Validates supported document types and file size before any upload request is made.
   const validateFiles = useCallback((files) => {
@@ -131,7 +135,7 @@ export default function Home() {
   }, [reviewModeEnabled, runAnalyzeForReview, runInstantRedaction, validateFiles]);
 
   // Persists the user's include/exclude choices by calling apply-redaction and then opens the normal results flow.
-  const handleApplyReview = useCallback(async (selectedCandidateIds) => {
+  const handleApplyReview = useCallback(async (selectedCandidateIds, selectedPolicyOptions = policyOptions) => {
     if (!reviewState?.analysisId) {
       toast.error("No active analysis found. Please upload again.");
       return;
@@ -141,7 +145,11 @@ export default function Home() {
     const selectedIds = new Set(selectedCandidateIds);
     const deselectedIds = allCandidateIds.filter((candidateId) => !selectedIds.has(candidateId));
 
-    const payload = { analysis_id: reviewState.analysisId };
+    const payload = {
+      analysis_id: reviewState.analysisId,
+      redact_locations: selectedPolicyOptions?.redactLocations ?? true,
+      redact_countries: selectedPolicyOptions?.redactCountries ?? true,
+    };
     if (deselectedIds.length > 0) {
       payload.exclude_candidate_ids = deselectedIds;
     }
@@ -164,7 +172,7 @@ export default function Home() {
       const detail = error?.response?.data?.detail || "Apply redaction failed";
       toast.error(detail);
     }
-  }, [reviewState]);
+  }, [policyOptions, reviewState]);
 
   /* ── Direct-URL downloads via native browser navigation ── */
   const handleDownload = useCallback(
@@ -229,6 +237,10 @@ export default function Home() {
     setResults([]);
     setFileNames([]);
     setReviewState(null);
+    setPolicyOptions({
+      redactLocations: true,
+      redactCountries: true,
+    });
   }, []);
 
   return (
@@ -263,6 +275,8 @@ export default function Home() {
             candidates={reviewState.candidates}
             selectedCandidateIds={reviewState.selectedCandidateIds}
             reviewPayload={reviewState.review}
+            policyOptions={policyOptions}
+            onPolicyChange={setPolicyOptions}
             onSelectionChange={(nextSelection) => {
               setReviewState((current) => ({
                 ...current,

@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 
 function prettify(key) {
   return (key || "UNKNOWN").replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
@@ -15,6 +17,8 @@ export default function ReviewPanel({
   candidates,
   selectedCandidateIds,
   reviewPayload,
+  policyOptions,
+  onPolicyChange,
   onSelectionChange,
   onApply,
   onReset,
@@ -29,6 +33,17 @@ export default function ReviewPanel({
       deselectedCount: Math.max(candidates.length - selectedSet.size, 0),
     };
   }, [candidates.length, selectedCandidateIds]);
+
+  // Toggles policy switches for location and country redaction behavior.
+  const updatePolicy = (key, value) => {
+    if (!onPolicyChange) {
+      return;
+    }
+    onPolicyChange({
+      ...(policyOptions || {}),
+      [key]: value,
+    });
+  };
 
   // Toggles an individual candidate while keeping state immutable for predictable React renders.
   const toggleCandidate = (candidateId) => {
@@ -97,6 +112,47 @@ export default function ReviewPanel({
         </CardContent>
       </Card>
 
+      <Card className="max-w-4xl mx-auto">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg">Policy toggles</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              <Label htmlFor="policy-location-toggle" className="text-sm font-semibold text-foreground">
+                Redact locations
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Turn off to keep location and address candidates unredacted.
+              </p>
+            </div>
+            <Switch
+              id="policy-location-toggle"
+              checked={policyOptions?.redactLocations ?? true}
+              onCheckedChange={(value) => updatePolicy("redactLocations", value)}
+              data-testid="policy-location-toggle"
+            />
+          </div>
+
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              <Label htmlFor="policy-country-toggle" className="text-sm font-semibold text-foreground">
+                Redact countries
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Turn off to keep country mentions while still redacting non-country locations.
+              </p>
+            </div>
+            <Switch
+              id="policy-country-toggle"
+              checked={policyOptions?.redactCountries ?? true}
+              onCheckedChange={(value) => updatePolicy("redactCountries", value)}
+              data-testid="policy-country-toggle"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="max-w-4xl mx-auto space-y-3">
         {candidates.length === 0 ? (
           <Card>
@@ -138,7 +194,7 @@ export default function ReviewPanel({
       <Separator className="max-w-4xl mx-auto" />
 
       <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-        <Button onClick={() => onApply(selectedCandidateIds)} size="lg" data-testid="apply-redaction-btn">
+        <Button onClick={() => onApply(selectedCandidateIds, policyOptions)} size="lg" data-testid="apply-redaction-btn">
           Apply Selected Redactions
         </Button>
         <Button variant="ghost" size="lg" onClick={onReset} data-testid="review-start-over-btn">
