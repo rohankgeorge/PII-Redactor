@@ -70,8 +70,8 @@ def test_stop_phrase_terms_are_review_only(monkeypatch):
     assert reasons <= {"STOP_PHRASE", "DENY_REDACT_LEXICON"}, f"Unexpected reasons: {reasons}"
 
 
-def test_single_token_org_is_review_only(monkeypatch):
-    """Single-token ORG detections (e.g. 'STA', 'Shares') must be review-only by default."""
+def test_single_token_org_is_review_only_at_lower_confidence(monkeypatch):
+    """Single-token ORG detections should be review-only when confidence is below auto-redact threshold."""
     text = "The STA requires a transfer of Shares to the buyer."
     entities = [
         {"start": 4, "end": 7, "text": "STA", "label": "ORG"},
@@ -87,6 +87,21 @@ def test_single_token_org_is_review_only(monkeypatch):
     signals = [s for s in tracker.qa_signals if s["source"] == "NAME_PREVALIDATION"]
     assert signals
     assert all(s["action"] == "REVIEW_ONLY" for s in signals)
+
+
+def test_single_token_org_can_auto_redact_at_high_confidence(monkeypatch):
+    """High-confidence single-token ORG detections should still auto-redact."""
+    text = "Infosys shall provide services to the client."
+    entities = [{"start": 0, "end": 7, "text": "Infosys", "label": "ORG"}]
+    _patch_nlp(monkeypatch, entities)
+
+    tracker = PIITracker()
+    output = _redact_names(text, tracker, "guardrail-test")
+
+    assert "[REDACTED_ENTITY" in output
+    signal = tracker.qa_signals[-1]
+    assert signal["action"] == "AUTO_REDACT"
+    assert signal["reason"] == "PASS"
 
 
 def test_entity_first_word_fallback_does_not_over_redact():

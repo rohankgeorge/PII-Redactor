@@ -787,11 +787,12 @@ def _redact_names(
         if lexical_valid and _is_false_positive_name(ent["text"]):
             lexical_valid, reason = False, "STOP_PHRASE"
 
-        # Single-token ORG detections are ambiguous — keep as review-only unless forced
+        # Single-token ORG detections are ambiguous at lower confidence — keep as review-only unless forced
         if (
             lexical_valid
             and ent["label"] == "ORG"
             and len(re.findall(r"[A-Za-z0-9']+", ent["text"])) == 1
+            and confidence < NAME_AUTO_REDACT_THRESHOLD
             and ent["text"].casefold() not in force_keys
         ):
             lexical_valid, reason = False, "SINGLE_TOKEN_ORG"
