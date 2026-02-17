@@ -670,7 +670,6 @@ def _redact_addresses(text: str, tracker: PIITracker, ctx: str) -> str:
 
 def _redact_entities(text: str, tracker: PIITracker, ctx: str) -> str:
     """Pass 2: Detect entity names with corporate suffixes."""
-    seen_short_names = []
 
     def _capture_defined_terms(match):
         full = match.group().strip().rstrip(".")
@@ -693,23 +692,10 @@ def _redact_entities(text: str, tracker: PIITracker, ctx: str) -> str:
         full = m.group().strip().rstrip(".")
         if _is_inside_placeholder(text, m.start()):
             return m.group()
-        name_part = m.group(1).strip()
-        # Determine category from full matched text
         cat = _entity_category(full)
-        seen_short_names.append(name_part.split()[0])  # First word for standalone detection
         return tracker.placeholder(cat, full, ctx)
 
     text = ENTITY_PATTERN.sub(_repl, text)
-
-    # Also catch standalone references to detected entity short names
-    for sn in seen_short_names:
-        if len(sn) >= 3:
-            safe = re.escape(sn)
-            def _sn_repl(m, _sn=sn):
-                if _is_inside_placeholder(text, m.start()):
-                    return m.group()
-                return tracker.placeholder("ENTITY", _sn, ctx)
-            text = re.sub(r"\b" + safe + r"\b", _sn_repl, text)
 
     return text
 
@@ -755,7 +741,8 @@ def _redact_post_address_ids(text: str, tracker: PIITracker, ctx: str) -> str:
 
 def _is_false_positive_name(phrase: str) -> bool:
     lowered = phrase.lower().strip()
-    if lowered in _STOP_PHRASES:
+    normalized = re.sub(r"[-_/]", " ", lowered)  # "Non-Compete" → "non compete"
+    if lowered in _STOP_PHRASES or normalized in _STOP_PHRASES:
         return True
     for word in re.findall(r"[a-z']+", lowered):
         if word in _FALSE_POSITIVE_NAME_WORDS:
@@ -795,6 +782,20 @@ def _redact_names(
             continue
         lexical_valid, reason = _lexically_valid(ent["text"])
         confidence = _ENTITY_LABEL_CONFIDENCE.get(ent["label"], 0.7)
+
+        # Stop-phrase / false-positive-word veto (was defined but never called here)
+        if lexical_valid and _is_false_positive_name(ent["text"]):
+            lexical_valid, reason = False, "STOP_PHRASE"
+
+        # Single-token ORG detections are ambiguous — keep as review-only unless forced
+        if (
+            lexical_valid
+            and ent["label"] == "ORG"
+            and len(re.findall(r"[A-Za-z0-9']+", ent["text"])) == 1
+            and ent["text"].casefold() not in force_keys
+        ):
+            lexical_valid, reason = False, "SINGLE_TOKEN_ORG"
+
         candidate_action = "AUTO_REDACT" if lexical_valid and confidence >= NAME_AUTO_REDACT_THRESHOLD else "REVIEW_ONLY"
         tracker.qa_signals.append(
             {
