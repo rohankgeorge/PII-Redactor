@@ -119,6 +119,11 @@
     "Indemnity",
     "Liability",
     "Warranty",
-    "Force Majeure"
+    "Force Majeure",
+    "Shares",
+    "STA",
+    "Non-Compete",
+    "Non-Disclosure",
+    "Non-Solicitation"
   ]
 }
