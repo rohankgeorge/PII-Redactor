@@ -1,0 +1,67 @@
+{
+  "name": "pii-redactor",
+  "version": "1.0.0",
+  "description": "PII Redactor — Detect and redact personally identifiable information from legal documents.",
+  "main": "main.js",
+  "author": "PII Redactor Team",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist": "electron-builder --win --mac"
+  },
+  "dependencies": {
+    "electron": "^33.0.0"
+  },
+  "devDependencies": {
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.piiredactor.app",
+    "productName": "PII Redactor",
+    "directories": {
+      "output": "../../dist"
+    },
+    "extraResources": [
+      {
+        "from": "../../backend_dist",
+        "to": "backend_dist",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopIcon": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "PII Redactor"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "icon": "icon.png",
+      "category": "public.app-category.productivity"
+    },
+    "dmg": {
+      "title": "PII Redactor",
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    }
+  }
+}

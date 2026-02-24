@@ -224,8 +224,22 @@ def delete_rule(rule_id: str) -> bool:
 
 
 def get_term_sets() -> tuple[set[str], set[str]]:
-    """Return (force_terms, allow_terms) for currently enabled rules."""
+    """Return (force_terms, allow_terms) for currently enabled rules.
+
+    When ``initialize()`` has not been called (e.g. in unit tests) the in-memory
+    ``_RULES`` list is empty.  As a fallback we read the legacy plain-text files
+    so that terms written directly to ``user_allow_list.txt`` /
+    ``user_redact_list.txt`` are still honoured.
+    """
     with _LOCK:
         force = {rule.term for rule in _RULES if rule.enabled and rule.mode == MODE_FORCE}
         allow = {rule.term for rule in _RULES if rule.enabled and rule.mode == MODE_ALLOW}
+
+        # Fallback: merge terms from legacy txt files when _RULES is empty
+        if not _RULES:
+            allow_path = _ALLOW_TXT_FILE or Path(__file__).parent / "user_allow_list.txt"
+            force_path = _FORCE_TXT_FILE or Path(__file__).parent / "user_redact_list.txt"
+            allow |= _load_txt_terms(allow_path)
+            force |= _load_txt_terms(force_path)
+
         return force, allow

@@ -1,5 +1,6 @@
 from fastapi import FastAPI, APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import Response
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -862,6 +863,12 @@ app.add_middleware(
 )
 
 
+
+
+# ── Static frontend serving (for standalone/installer builds) ──
+_FRONTEND_BUILD_DIR = ROOT_DIR / "frontend_build"
+if _FRONTEND_BUILD_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=str(_FRONTEND_BUILD_DIR), html=True), name="frontend")
 
 
 @app.on_event("startup")

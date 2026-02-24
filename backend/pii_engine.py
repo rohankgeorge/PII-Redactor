@@ -646,7 +646,7 @@ def _score_address_candidate(candidate: str) -> int:
         or re.search(r"\b(?:pin|pincode|zip)\b\s*[:\-]?\s*\d{5,6}\b", lowered)
     )
     has_house_marker = bool(
-        re.search(r"\b(?:no\.?|flat|door|house|plot|block|sy\.?\s*no\.?|s\.?\s*no\.?)\b\s*[#:\-]?\s*[a-z]?\d", lowered)
+        re.search(r"\b(?:no\.?|flat|door|house|plot|block|sy\.?\s*no\.?|s\.?\s*no\.?)\s*[#:\-]?\s*[a-z]?\d", lowered)
     )
     has_ordinal_street = bool(
         re.search(r"\b\d+(?:st|nd|rd|th)\b[\w\s,.'\-/]{0,20}\b(?:street|st\.?|road|rd\.?|lane|ln\.?|place|pl\.?)\b", lowered)
@@ -845,6 +845,9 @@ def _redact_names(
             return False, "SINGLE_TOKEN_TOO_SHORT"
         if lowered in _DENY_REDACT_LEXICON:
             return False, "DENY_REDACT_LEXICON"
+        # Also reject if any individual word belongs to the deny-redact lexicon
+        if any(w.casefold() in _DENY_REDACT_LEXICON for w in words):
+            return False, "DENY_REDACT_LEXICON"
         return True, "PASS"
 
     for ent in sorted(entities, key=lambda item: item["start"], reverse=True):
@@ -862,6 +865,24 @@ def _redact_names(
         if lexical_valid and _is_false_positive_name(ent["text"]):
             lexical_valid, reason = False, "STOP_PHRASE"
 
+        # INDIVIDUAL entity that is (or ends with) a street suffix — likely a street name, not a person
+        if lexical_valid and category == "INDIVIDUAL":
+            ent_words = re.findall(r"[A-Za-z0-9']+", ent["text"])
+            # Check if the last word of the entity is a street suffix
+            _last_word_is_street = (
+                len(ent_words) >= 1
+                and ent_words[-1].rstrip(".").lower() in _ADDRESS_STREET_SUFFIXES
+            )
+            # Check if the word immediately following a single-token entity is a street suffix
+            _next_word_is_street = False
+            if len(ent_words) == 1:
+                after_text = text[ent["end"]:].lstrip()
+                first_after_word = re.match(r"[A-Za-z]+\.?", after_text)
+                if first_after_word and first_after_word.group().rstrip(".").lower() in _ADDRESS_STREET_SUFFIXES:
+                    _next_word_is_street = True
+            if _last_word_is_street or _next_word_is_street:
+                lexical_valid, reason = False, "STREET_NAME_COMPONENT"
+
         # Single-token ORG detections are ambiguous — keep as review-only unless forced
         if (
             lexical_valid
@@ -870,6 +891,17 @@ def _redact_names(
             and ent["text"].casefold() not in force_keys
         ):
             lexical_valid, reason = False, "SINGLE_TOKEN_ORG"
+
+        # ORG entities whose leading token is shorter than min_single_token_length
+        # (e.g. initials like "Al") are likely false positives — demote to review-only
+        if lexical_valid and ent["label"] == "ORG":
+            ent_tokens = re.findall(r"[A-Za-z0-9']+", ent["text"])
+            if (
+                len(ent_tokens) >= 2
+                and len(ent_tokens[0]) < config.min_single_token_length
+                and ent["text"].casefold() not in force_keys
+            ):
+                lexical_valid, reason = False, "ORG_LEADING_SHORT_TOKEN"
 
         candidate_action = "AUTO_REDACT" if lexical_valid and confidence >= NAME_AUTO_REDACT_THRESHOLD else "REVIEW_ONLY"
         tracker.qa_signals.append(
@@ -881,6 +913,8 @@ def _redact_names(
                 "action": candidate_action,
                 "reason": reason,
                 "location": ctx,
+                "severity": "HIGH" if candidate_action == "AUTO_REDACT" else "REVIEW",
+                "highlight": QA_REVIEW_HIGHLIGHT_COLOR,
             }
         )
         if candidate_action != "AUTO_REDACT":
