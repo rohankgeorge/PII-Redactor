@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 import re
 from typing import Any, Optional
 
 import spacy
+
+logger = logging.getLogger(__name__)
 
 from indian_pii_data import (
     INDIAN_CITIES,
@@ -16,6 +19,28 @@ from indian_pii_data import (
 )
 
 MODEL_NAME = "en_core_web_sm"
+
+
+def _resolve_spacy_model():
+    """Resolve the spaCy model, handling PyInstaller bundles.
+
+    In normal Python environments, spacy.load("en_core_web_sm") imports the
+    model as a package.  Inside a PyInstaller bundle the model is packed as
+    data files under _MEIPASS and must be loaded by path instead.
+    """
+    import sys
+
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        pkg_dir = Path(meipass) / "en_core_web_sm" / "en_core_web_sm"
+        if pkg_dir.is_dir():
+            # Find the versioned sub-directory that contains config.cfg
+            for child in pkg_dir.iterdir():
+                if child.is_dir() and (child / "config.cfg").exists():
+                    return str(child)
+    return MODEL_NAME
+
+
 LEGAL_MODEL_WHL = (
     "https://huggingface.co/opennyaiorg/en_legal_ner_trf/resolve/main/"
     "en_legal_ner_trf-any-py3-none-any.whl"
@@ -53,7 +78,7 @@ def load_nlp_pipeline():
     if NLP is not None:
         return NLP
 
-    nlp = spacy.load(MODEL_NAME)
+    nlp = spacy.load(_resolve_spacy_model())
     major, minor = (int(x) for x in spacy.__version__.split(".")[:2])
     use_span_ruler = (major, minor) >= (3, 3)
 
@@ -74,9 +99,10 @@ def load_nlp_pipeline():
     patterns.extend(_build_location_patterns())
     ruler.add_patterns(patterns)
 
-    print(
-        f"EntityRuler loaded with {len(merged_firsts)} first name patterns "
-        f"and {len(merged_surnames)} surname patterns."
+    logger.info(
+        "EntityRuler loaded with %d first name patterns and %d surname patterns.",
+        len(merged_firsts),
+        len(merged_surnames),
     )
 
     NLP = nlp
@@ -92,9 +118,10 @@ def load_legal_ner():
     try:
         LEGAL_NLP = spacy.load("en_legal_ner_trf")
     except Exception:
-        print(
+        logger.warning(
             "OpenNyAI Legal NER not installed — skipping. "
-            f"Install with: pip install {LEGAL_MODEL_WHL}"
+            "Install with: pip install %s",
+            LEGAL_MODEL_WHL,
         )
         LEGAL_NLP = None
     return LEGAL_NLP
@@ -111,7 +138,7 @@ def load_indic_ner() -> Optional[Any]:
 
         INDIC_PIPELINE = pipeline("ner", model="ai4bharat/IndicNER")
     except Exception:
-        print(
+        logger.warning(
             "IndicNER not installed — skipping. Install with: "
             "pip install transformers torch"
         )

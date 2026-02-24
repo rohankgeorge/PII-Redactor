@@ -35,6 +35,21 @@ import rule_library
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
+# ── Writable data directory for mutable rule data ──────────
+import sys as _sys
+if getattr(_sys, "_MEIPASS", None):
+    DATA_DIR = Path(os.environ.get("APPDATA", str(ROOT_DIR))) / "PII Redactor" / "data"
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    # Bootstrap: copy bundled seed files to writable location on first run
+    for _fname in ("user_allow_list.txt", "user_redact_list.txt"):
+        _dest = DATA_DIR / _fname
+        _src = ROOT_DIR / _fname
+        if not _dest.exists() and _src.exists():
+            import shutil
+            shutil.copy2(str(_src), str(_dest))
+else:
+    DATA_DIR = ROOT_DIR
+
 # MongoDB connection (optional for local runs)
 mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
 client = AsyncIOMotorClient(mongo_url)
@@ -47,7 +62,15 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
+if getattr(_sys, "_MEIPASS", None):
+    _log_dir = Path(os.environ.get("APPDATA", str(ROOT_DIR))) / "PII Redactor" / "logs"
+    _log_dir.mkdir(parents=True, exist_ok=True)
+    _fh = logging.FileHandler(str(_log_dir / "backend.log"), encoding="utf-8")
+    _fh.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+    logging.getLogger().addHandler(_fh)
 logger = logging.getLogger(__name__)
+if getattr(_sys, "_MEIPASS", None):
+    logger.info("PyInstaller bundle detected — logging to %s", _log_dir / "backend.log")
 
 
 class RuleCreateRequest(BaseModel):
@@ -873,11 +896,22 @@ if _FRONTEND_BUILD_DIR.is_dir():
 
 @app.on_event("startup")
 async def startup_nlp_models():
-    rule_library.initialize(ROOT_DIR)
-    nlp_engine.initialize_models()
+    rule_library.initialize(DATA_DIR)
+    import asyncio
+    loop = asyncio.get_event_loop()
+    try:
+        await loop.run_in_executor(None, nlp_engine.initialize_models)
+        logger.info("NLP models loaded successfully")
+    except Exception:
+        logger.exception("NLP model loading failed at startup — will retry on first request")
 
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
     if client:
         client.close()
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="info")

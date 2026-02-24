@@ -117,6 +117,8 @@ hiddenimports = [
     "generated_indian_names",
     "rule_library",
     "test_doc_support",
+    "name_data",
+    "name_data.load_names",
 ]
 
 # ── Analysis ─────────────────────────────────────────────────
@@ -137,6 +139,12 @@ a = Analysis(
         "jupyter",
         "notebook",
         "pytest",
+        "torch",
+        "torchvision",
+        "torchaudio",
+        "transformers",
+        "spacy_transformers",
+        "spacy.pipeline.transformer",
     ],
     noarchive=False,
     optimize=0,
@@ -155,7 +163,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=True,  # Keep console for server logging
+    console=False,
 )
 
 coll = COLLECT(
