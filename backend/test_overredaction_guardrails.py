@@ -21,7 +21,8 @@ def test_deny_redact_lexicon_terms_are_review_only(monkeypatch):
     output = _redact_names(text, tracker, "guardrail-test")
 
     assert output == text
-    assert "[REDACTED_" not in output
+    from placeholder_utils import PLACEHOLDER_PATTERN
+    assert not PLACEHOLDER_PATTERN.search(output)
     deny_signals = [s for s in tracker.qa_signals if s["source"] == "NAME_PREVALIDATION"]
     assert deny_signals
     assert all(s["action"] == "REVIEW_ONLY" for s in deny_signals)
@@ -43,7 +44,7 @@ def test_short_single_token_skips_auto_redact_unless_forced(monkeypatch):
 
     tracker_force = PIITracker()
     forced_output = _redact_names(text, tracker_force, "guardrail-test", force_redact_terms={"Al"})
-    assert "[REDACTED_INDIVIDUAL" in forced_output
+    assert "Person " in forced_output
     assert tracker_force.qa_signals[-1]["action"] == "AUTO_REDACT"
     assert tracker_force.qa_signals[-1]["reason"] == "PASS"
 
@@ -61,7 +62,8 @@ def test_stop_phrase_terms_are_review_only(monkeypatch):
     output = _redact_names(text, tracker, "guardrail-test")
 
     assert output == text, f"Expected no redaction, got: {output!r}"
-    assert "[REDACTED_" not in output
+    from placeholder_utils import PLACEHOLDER_PATTERN
+    assert not PLACEHOLDER_PATTERN.search(output)
     signals = [s for s in tracker.qa_signals if s["source"] == "NAME_PREVALIDATION"]
     assert signals
     assert all(s["action"] == "REVIEW_ONLY" for s in signals)
@@ -83,7 +85,8 @@ def test_single_token_org_is_review_only(monkeypatch):
     output = _redact_names(text, tracker, "guardrail-test")
 
     assert output == text, f"Expected no redaction, got: {output!r}"
-    assert "[REDACTED_" not in output
+    from placeholder_utils import PLACEHOLDER_PATTERN
+    assert not PLACEHOLDER_PATTERN.search(output)
     signals = [s for s in tracker.qa_signals if s["source"] == "NAME_PREVALIDATION"]
     assert signals
     assert all(s["action"] == "REVIEW_ONLY" for s in signals)
@@ -96,8 +99,8 @@ def test_entity_first_word_fallback_does_not_over_redact():
     tracker = PIITracker()
     output = _redact_entities(text, tracker, "guardrail-test")
 
-    # The full entity "Shares India Ltd" must be redacted
-    assert "[REDACTED_" in output, "Expected company name to be redacted"
+    # The full entity "Shares India Ltd" must be redacted (letter + suffix format)
+    assert "Ltd" in output and "Shares India Ltd" not in output, "Expected company name to be redacted"
     # But the standalone word "Shares" after the company must remain plain
     assert "the Shares to" in output, (
         f"Standalone 'Shares' should not be redacted, but got: {output!r}"

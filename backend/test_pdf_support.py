@@ -59,7 +59,7 @@ def test_api_accepts_pdf_upload(monkeypatch):
     monkeypatch.setattr(server.nlp_engine, "initialize_models", lambda: None)
 
     def _fake_process_pdf_document(_content: bytes):
-        return ({"INDIVIDUAL": 1}, 1, b"docx-bytes", [{"category": "INDIVIDUAL", "placeholder": "[REDACTED_INDIVIDUAL1]", "location": "Page 1"}], [])
+        return ({"INDIVIDUAL": 1}, 1, b"docx-bytes", [{"category": "INDIVIDUAL", "placeholder": "Person 1", "location": "Page 1"}], [])
 
     monkeypatch.setattr(server, "process_pdf_document", _fake_process_pdf_document)
 
@@ -85,7 +85,7 @@ def test_process_pdf_document_redacts_full_page_before_splitting(monkeypatch):
 
     def _fake_redact_text(text, _tracker, context):
         calls.append((text, context))
-        return text.replace("No. 97, 3rd Cross\nDomlur Layout, Bangalore - 560022", "[REDACTED_ADDRESS1]")
+        return text.replace("No. 97, 3rd Cross\nDomlur Layout, Bangalore - 560022", "[Address 1]")
 
     monkeypatch.setattr(server, "PdfReader", _MultilineReader)
     monkeypatch.setattr(server, "redact_text", _fake_redact_text)
@@ -98,4 +98,4 @@ def test_process_pdf_document_redacts_full_page_before_splitting(monkeypatch):
 
     doc = DocxDocument(BytesIO(redacted_bytes))
     text_content = "\n".join(p.text for p in doc.paragraphs)
-    assert "[REDACTED_ADDRESS1]" in text_content
+    assert "[Address 1]" in text_content

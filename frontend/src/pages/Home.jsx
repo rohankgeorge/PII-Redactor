@@ -23,6 +23,9 @@ export default function Home() {
     redactLocations: true,
     redactCountries: true,
   });
+  const [outputFormat, setOutputFormat] = useState("docx");
+  const [forceRedactTerms, setForceRedactTerms] = useState([]);
+  const [placeholderOverrides, setPlaceholderOverrides] = useState({});
 
   // Validates supported document types and file size before any upload request is made.
   const validateFiles = useCallback((files) => {
@@ -153,6 +156,12 @@ export default function Home() {
     if (deselectedIds.length > 0) {
       payload.exclude_candidate_ids = deselectedIds;
     }
+    if (forceRedactTerms.length > 0) {
+      payload.force_redact_terms = forceRedactTerms;
+    }
+    if (Object.keys(placeholderOverrides).length > 0) {
+      payload.placeholder_overrides = placeholderOverrides;
+    }
 
     setState("processing");
 
@@ -172,23 +181,21 @@ export default function Home() {
       const detail = error?.response?.data?.detail || "Apply redaction failed";
       toast.error(detail);
     }
-  }, [policyOptions, reviewState]);
+  }, [policyOptions, reviewState, forceRedactTerms, placeholderOverrides]);
 
   /* ── Direct-URL downloads via native browser navigation ── */
   const handleDownload = useCallback(
     (index) => {
       const r = results[index];
       if (r?.result?.file_id) {
-        // Using an iframe to trigger download avoids popup blockers
-        // and doesn't navigate away from the current page
         const iframe = document.createElement("iframe");
         iframe.style.display = "none";
-        iframe.src = `${API}/download/${r.result.file_id}`;
+        iframe.src = `${API}/download/${r.result.file_id}?output_format=${outputFormat}`;
         document.body.appendChild(iframe);
         setTimeout(() => document.body.removeChild(iframe), 10000);
       }
     },
-    [results],
+    [results, outputFormat],
   );
 
   const handleDownloadAll = useCallback(() => {
@@ -197,13 +204,13 @@ export default function Home() {
         setTimeout(() => {
           const iframe = document.createElement("iframe");
           iframe.style.display = "none";
-          iframe.src = `${API}/download/${r.result.file_id}`;
+          iframe.src = `${API}/download/${r.result.file_id}?output_format=${outputFormat}`;
           document.body.appendChild(iframe);
           setTimeout(() => document.body.removeChild(iframe), 10000);
         }, i * 500);
       }
     });
-  }, [results]);
+  }, [results, outputFormat]);
 
   const handleExportAudit = useCallback(() => {
     const fileIds = results.filter((r) => r.result?.file_id).map((r) => r.result.file_id);
@@ -241,6 +248,9 @@ export default function Home() {
       redactLocations: true,
       redactCountries: true,
     });
+    setOutputFormat("docx");
+    setForceRedactTerms([]);
+    setPlaceholderOverrides({});
   }, []);
 
   return (
@@ -285,6 +295,10 @@ export default function Home() {
             }}
             onApply={handleApplyReview}
             onReset={handleReset}
+            forceRedactTerms={forceRedactTerms}
+            onForceRedactTermsChange={setForceRedactTerms}
+            placeholderOverrides={placeholderOverrides}
+            onPlaceholderOverridesChange={setPlaceholderOverrides}
           />
         )}
         {(state === "done" || state === "error") && (
@@ -295,6 +309,8 @@ export default function Home() {
             onExportAudit={handleExportAudit}
             onReset={handleReset}
             hasError={state === "error"}
+            outputFormat={outputFormat}
+            onOutputFormatChange={setOutputFormat}
           />
         )}
       </main>

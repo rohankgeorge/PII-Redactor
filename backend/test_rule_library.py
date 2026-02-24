@@ -43,7 +43,7 @@ def test_redaction_precedence_allow_and_force(tmp_path, monkeypatch):
     _init_tmp_rules(tmp_path)
 
     # Avoid model-loading side effects; this test targets allow/force precedence only.
-    monkeypatch.setattr("pii_engine._redact_names", lambda text, tracker, ctx, config=None: text)
+    monkeypatch.setattr("pii_engine._redact_names", lambda text, tracker, ctx, config=None, force_redact_terms=None: text)
     monkeypatch.setattr("pii_engine._run_final_qa", lambda text, tracker, context: text)
     monkeypatch.setattr(server.nlp_engine, "run_second_pass", lambda text, tracker, legal_nlp, indic_pipeline, context: text)
 
@@ -57,7 +57,7 @@ def test_redaction_precedence_allow_and_force(tmp_path, monkeypatch):
 
     assert "DoNotRedact" in out
     assert "MustHide" not in out
-    assert "[REDACTED_INDIVIDUAL" in out
+    assert "Person " in out
 
 
 def test_rules_api_crud(tmp_path, monkeypatch):

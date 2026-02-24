@@ -13,7 +13,7 @@ def test_tracker_placeholder_audit_includes_original_text():
     tracker = pii_engine.PIITracker()
     placeholder = tracker.placeholder("EMAIL", "alice@example.com", "Paragraph 1")
 
-    assert placeholder.startswith("[REDACTED_EMAIL")
+    assert placeholder.startswith("[Email ")
     assert tracker.audit_log[0]["original_text"] == "alice@example.com"
 
 
@@ -48,7 +48,7 @@ def test_audit_csv_includes_original_text_column(monkeypatch):
             out.getvalue(),
             [{
                 "category": "EMAIL",
-                "placeholder": "[REDACTED_EMAIL1]",
+                "placeholder": "[Email 1]",
                 "location": "Paragraph 1",
                 "original_text": "alice@example.com",
             }],
@@ -91,7 +91,7 @@ def test_batch_audit_csv_includes_original_text_column(monkeypatch):
             out.getvalue(),
             [{
                 "category": "PHONE_NUMBER",
-                "placeholder": "[REDACTED_PHONE_NUMBER1]",
+                "placeholder": "[Phone 1]",
                 "location": "Paragraph 2",
                 "original_text": "+91 98765 43210",
             }],

@@ -28,6 +28,7 @@ from indian_pii_data import (
 )
 from pii_engine import PIITracker, redact_text
 import nlp_engine
+import format_converter
 import rule_library
 
 ROOT_DIR = Path(__file__).parent
@@ -66,6 +67,8 @@ class ApplyRedactionRequest(BaseModel):
     exclude_candidate_ids: Optional[List[str]] = Field(default=None)
     redact_locations: bool = True
     redact_countries: bool = True
+    force_redact_terms: Optional[List[str]] = Field(default=None)
+    placeholder_overrides: Optional[Dict[str, str]] = Field(default=None)
 
     @model_validator(mode="after")
     def validate_filters(self):
@@ -271,6 +274,130 @@ def _apply_placeholder_reverts(redacted_docx_bytes: bytes, rows_to_revert: list[
     doc.save(out)
     out.seek(0)
     return out.read()
+
+
+def _apply_force_redact_terms(docx_bytes: bytes, terms: list[str], audit_log: list, stats: dict, total: int) -> tuple[bytes, dict, int, list]:
+    """Find and redact additional user-specified terms inside a DOCX artifact."""
+    if not terms:
+        return docx_bytes, stats, total, audit_log
+
+    tracker = PIITracker()
+    doc = DocxDocument(io.BytesIO(docx_bytes))
+    new_audit_rows: list[dict] = []
+
+    def _replace_in_text(text: str, context: str) -> str:
+        for term in sorted(terms, key=len, reverse=True):
+            if not term.strip():
+                continue
+            pattern = re.compile(re.escape(term), re.IGNORECASE)
+            matches = list(pattern.finditer(text))
+            for m in reversed(matches):
+                placeholder = tracker.placeholder("INDIVIDUAL", m.group(), context)
+                new_audit_rows.append({
+                    "category": "INDIVIDUAL",
+                    "placeholder": placeholder,
+                    "original_text": m.group(),
+                    "location": context,
+                })
+                text = text[:m.start()] + placeholder + text[m.end():]
+        return text
+
+    def _rewrite_paragraph(para, context: str):
+        if not para.text:
+            return
+        new_text = _replace_in_text(para.text, context)
+        if new_text == para.text:
+            return
+        if para.runs:
+            for idx, run in enumerate(para.runs):
+                run.text = new_text if idx == 0 else ""
+        else:
+            para.add_run(new_text)
+
+    for i, para in enumerate(doc.paragraphs):
+        _rewrite_paragraph(para, f"Paragraph {i + 1}")
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for para in cell.paragraphs:
+                    _rewrite_paragraph(para, "Table cell")
+
+    if not new_audit_rows:
+        return docx_bytes, stats, total, audit_log
+
+    updated_stats = dict(stats)
+    for row in new_audit_rows:
+        cat = row["category"]
+        updated_stats[cat] = updated_stats.get(cat, 0) + 1
+    updated_total = total + len(new_audit_rows)
+    updated_audit = audit_log + new_audit_rows
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf.read(), updated_stats, updated_total, updated_audit
+
+
+def _apply_placeholder_overrides(docx_bytes: bytes, overrides: dict[str, str], candidates: list, audit_log: list) -> tuple[bytes, list]:
+    """Replace auto-generated placeholders with user-specified custom text in a DOCX."""
+    if not overrides:
+        return docx_bytes, audit_log
+
+    candidate_lookup = {c["candidate_id"]: c for c in candidates}
+    replacement_map: dict[str, str] = {}
+    for cand_id, custom_text in overrides.items():
+        cand = candidate_lookup.get(cand_id)
+        if cand and cand.get("placeholder"):
+            replacement_map[cand["placeholder"]] = custom_text
+
+    if not replacement_map:
+        return docx_bytes, audit_log
+
+    doc = DocxDocument(io.BytesIO(docx_bytes))
+
+    def _replace_text(value: str) -> str:
+        updated = value
+        for old_ph, new_ph in replacement_map.items():
+            updated = updated.replace(old_ph, new_ph)
+        return updated
+
+    def _rewrite_paragraph(para):
+        if not para.text:
+            return
+        new_text = _replace_text(para.text)
+        if new_text == para.text:
+            return
+        if para.runs:
+            for idx, run in enumerate(para.runs):
+                run.text = new_text if idx == 0 else ""
+        else:
+            para.add_run(new_text)
+
+    for para in doc.paragraphs:
+        _rewrite_paragraph(para)
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for para in cell.paragraphs:
+                    _rewrite_paragraph(para)
+    for section in doc.sections:
+        for para in section.header.paragraphs:
+            _rewrite_paragraph(para)
+        for para in section.footer.paragraphs:
+            _rewrite_paragraph(para)
+
+    updated_audit = []
+    for row in audit_log:
+        ph = row.get("placeholder", "")
+        if ph in replacement_map:
+            updated_audit.append({**row, "placeholder": replacement_map[ph]})
+        else:
+            updated_audit.append(row)
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf.read(), updated_audit
 
 
 def _filter_analysis_for_apply(analysis_entry: dict, payload: ApplyRedactionRequest) -> tuple[bytes, dict, int, list]:
@@ -574,6 +701,13 @@ async def apply_redaction(payload: ApplyRedactionRequest):
 
     try:
         redacted_bytes, stats, total, audit_log = _filter_analysis_for_apply(analysis_entry, payload)
+        redacted_bytes, stats, total, audit_log = _apply_force_redact_terms(
+            redacted_bytes, payload.force_redact_terms or [], audit_log, stats, total,
+        )
+        candidates = analysis_entry.get("candidates", [])
+        redacted_bytes, audit_log = _apply_placeholder_overrides(
+            redacted_bytes, payload.placeholder_overrides or {}, candidates, audit_log,
+        )
     except HTTPException:
         raise
     except Exception as exc:
@@ -621,14 +755,31 @@ async def delete_rule(rule_id: str):
 
 
 @api_router.get("/download/{file_id}")
-async def download_redacted(file_id: str):
+async def download_redacted(file_id: str, output_format: str = "docx"):
     entry = _file_store.get(file_id)
     if not entry:
         raise HTTPException(status_code=404, detail="File expired or not found. Please re-process.")
+
+    fmt = output_format.lower().strip().lstrip(".")
+    base_stem = entry["filename"].rsplit(".", 1)[0]
+
+    if fmt == "pdf":
+        content = format_converter.convert_to_pdf(entry["data"])
+        media_type = "application/pdf"
+        filename = f"{base_stem}.pdf"
+    elif fmt in ("md", "markdown"):
+        content = format_converter.convert_to_markdown(entry["data"]).encode("utf-8")
+        media_type = "text/markdown; charset=utf-8"
+        filename = f"{base_stem}.md"
+    else:
+        content = entry["data"]
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        filename = entry["filename"]
+
     return Response(
-        content=entry["data"],
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f'attachment; filename="{entry["filename"]}"'},
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

@@ -3,7 +3,7 @@
 import pii_engine
 
 
-def test_final_qa_skips_detection_starting_at_placeholder_bracket(monkeypatch):
+def test_final_qa_skips_detection_starting_at_old_placeholder_bracket(monkeypatch):
     tracker = pii_engine.PIITracker()
     text = "[REDACTED_EMAIL1]"
 
@@ -20,7 +20,7 @@ def test_final_qa_skips_detection_starting_at_placeholder_bracket(monkeypatch):
     assert [row for row in tracker.audit_log if row.get("category") == "POTENTIAL_LEAK"] == []
 
 
-def test_final_qa_skips_detection_starting_at_placeholder_inner_text(monkeypatch):
+def test_final_qa_skips_detection_starting_at_old_placeholder_inner_text(monkeypatch):
     tracker = pii_engine.PIITracker()
     text = "[REDACTED_EMAIL1]"
 
@@ -37,7 +37,7 @@ def test_final_qa_skips_detection_starting_at_placeholder_inner_text(monkeypatch
     assert [row for row in tracker.audit_log if row.get("category") == "POTENTIAL_LEAK"] == []
 
 
-def test_final_qa_skips_detection_starting_in_middle_of_placeholder(monkeypatch):
+def test_final_qa_skips_detection_starting_in_middle_of_old_placeholder(monkeypatch):
     tracker = pii_engine.PIITracker()
     text = "[REDACTED_EMAIL1]"
 
@@ -50,5 +50,39 @@ def test_final_qa_skips_detection_starting_in_middle_of_placeholder(monkeypatch)
     monkeypatch.setattr(pii_engine, "QA_AUTO_REDACT_THRESHOLD", 0.99)
 
     pii_engine._run_final_qa(text, tracker, "placeholder middle")
+
+    assert [row for row in tracker.audit_log if row.get("category") == "POTENTIAL_LEAK"] == []
+
+
+def test_final_qa_skips_new_bracket_placeholder(monkeypatch):
+    tracker = pii_engine.PIITracker()
+    text = "[Email 1]"
+
+    monkeypatch.setattr(pii_engine.nlp_engine, "load_nlp_pipeline", lambda: object())
+    monkeypatch.setattr(
+        pii_engine.nlp_engine,
+        "detect_names_and_locations",
+        lambda _text, _nlp: [{"start": 0, "end": len(text), "text": text, "label": "PERSON"}],
+    )
+    monkeypatch.setattr(pii_engine, "QA_AUTO_REDACT_THRESHOLD", 0.99)
+
+    pii_engine._run_final_qa(text, tracker, "new bracket placeholder")
+
+    assert [row for row in tracker.audit_log if row.get("category") == "POTENTIAL_LEAK"] == []
+
+
+def test_final_qa_skips_person_placeholder(monkeypatch):
+    tracker = pii_engine.PIITracker()
+    text = "Person 1"
+
+    monkeypatch.setattr(pii_engine.nlp_engine, "load_nlp_pipeline", lambda: object())
+    monkeypatch.setattr(
+        pii_engine.nlp_engine,
+        "detect_names_and_locations",
+        lambda _text, _nlp: [{"start": 0, "end": len(text), "text": text, "label": "PERSON"}],
+    )
+    monkeypatch.setattr(pii_engine, "QA_AUTO_REDACT_THRESHOLD", 0.99)
+
+    pii_engine._run_final_qa(text, tracker, "person placeholder")
 
     assert [row for row in tracker.audit_log if row.get("category") == "POTENTIAL_LEAK"] == []

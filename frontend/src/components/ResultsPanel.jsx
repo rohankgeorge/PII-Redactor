@@ -47,7 +47,7 @@ function aggregateStats(results) {
   return Object.entries(agg).sort((a, b) => b[1] - a[1]);
 }
 
-export default function ResultsPanel({ results = [], onDownload, onDownloadAll, onExportAudit, onReset, hasError }) {
+export default function ResultsPanel({ results = [], onDownload, onDownloadAll, onExportAudit, onReset, hasError, outputFormat = "docx", onOutputFormatChange }) {
   if (hasError || !results.length || results.every((r) => r.error)) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[55vh] animate-fade-in-up" data-testid="error-state">
@@ -138,6 +138,33 @@ export default function ResultsPanel({ results = [], onDownload, onDownloadAll, 
       )}
 
       <Separator className="max-w-3xl mx-auto" />
+
+      {/* Output Format Selector */}
+      {totalPII > 0 && onOutputFormatChange && (
+        <div className="flex items-center justify-center gap-4 pt-2" data-testid="format-selector">
+          <span className="text-sm font-medium text-muted-foreground">Output format:</span>
+          <div className="flex gap-1 rounded-lg border border-border p-1 bg-card">
+            {[
+              { value: "docx", label: ".docx" },
+              { value: "pdf", label: ".pdf" },
+              { value: "md", label: ".md" },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => onOutputFormatChange(opt.value)}
+                className={`px-3 py-1.5 rounded-md text-sm font-mono transition-colors ${
+                  outputFormat === opt.value
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground hover:bg-secondary"
+                }`}
+                data-testid={`format-${opt.value}`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2" data-testid="action-buttons">

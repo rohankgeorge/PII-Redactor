@@ -23,7 +23,12 @@ from global_pii_data import (
 
 import nlp_engine
 import rule_library
-from placeholder_utils import is_inside_placeholder as _is_inside_placeholder, is_placeholder_internal_text
+from placeholder_utils import is_inside_placeholder as _is_inside_placeholder, is_placeholder_internal_text, PLACEHOLDER_PATTERN as _PLACEHOLDER_RE
+
+
+def _contains_placeholder(text: str) -> bool:
+    """Return True if *text* contains any placeholder token (old or new format)."""
+    return bool(_PLACEHOLDER_RE.search(text))
 
 
 # ────────────────────────────────────────────────────────────
@@ -32,6 +37,47 @@ from placeholder_utils import is_inside_placeholder as _is_inside_placeholder, i
 class PIITracker:
     """Track unique PII values and assign sequential numbers per category."""
 
+    # Human-readable format templates for each PII category.
+    # Categories using letters (A, B, C...) for entity-type placeholders.
+    _ENTITY_CATEGORIES = {"PRIVATE_LIMITED", "LIMITED", "LLP", "ENTITY"}
+    # Map categories to human-readable display names for [Category N] format.
+    _CATEGORY_DISPLAY_NAMES: Dict[str, str] = {
+        "AADHAAR_NUMBER": "Aadhaar",
+        "PAN_NUMBER": "PAN",
+        "PHONE_NUMBER": "Phone",
+        "EMAIL": "Email",
+        "BANK_ACCOUNT": "Bank Account",
+        "GST_NUMBER": "GST",
+        "IFSC_CODE": "IFSC",
+        "PASSPORT_NUMBER": "Passport",
+        "VOTER_ID": "Voter ID",
+        "DRIVING_LICENSE": "DL",
+        "VEHICLE_REGISTRATION": "Vehicle Reg",
+        "UPI_ID": "UPI",
+        "DATE_OF_BIRTH": "DOB",
+        "PIN_CODE": "PIN",
+        "LOCATION": "Location",
+        "ADDRESS": "Address",
+        "US_ZIP_CODE": "ZIP",
+        "UK_POSTCODE": "Postcode",
+    }
+    # Title prefixes to detect and preserve on person names.
+    _TITLE_PREFIXES = re.compile(
+        r"^(Mr\.?|Mrs\.?|Ms\.?|Dr\.?|Prof\.?|Shri\.?|Smt\.?|Sri\.?)\s+",
+        re.IGNORECASE,
+    )
+    # Corporate suffix patterns to extract from entity names.
+    _CORPORATE_SUFFIX_RE = re.compile(
+        r"\s+(Private\s+Limited|Pvt\.?\s*Ltd\.?|Limited|Ltd\.?|LLP|LLC|"
+        r"Inc\.?|Corporation|Corp\.?|Co\.?|Foundation|Trust|Associates|"
+        r"Enterprises|Industries|Services|Holdings|Group|Partners|Bank|"
+        r"Associations?|Owners?\s*(?:'s\s*)?Association|Society|Federation|"
+        r"Chamber|Firm|Audit\s+Firm)\s*$",
+        re.IGNORECASE,
+    )
+    # Letters used for entity placeholders (X, Y, Z, A, B, C, ...)
+    _ENTITY_LETTERS = list("XYZABCDEFGHIJKLMNOPQRSTUVW")
+
     def __init__(self):
         self._registry: Dict[str, Dict[str, int]] = {}
         self._alias_registry: Dict[str, Dict[str, int]] = {}
@@ -39,22 +85,61 @@ class PIITracker:
         self.stats: Dict[str, int] = {}
         self.audit_log: list = []
         self.qa_signals: list = []
+        # Shared counter for entity-type categories (letters).
+        self._entity_counter: int = 0
+        self._entity_key_map: Dict[str, int] = {}
+
+    def _format_placeholder(self, category: str, original: str, num: int) -> str:
+        """Generate human-readable placeholder from category, original text, and number."""
+        # --- Entity categories: use letter + corporate suffix ---
+        if category in self._ENTITY_CATEGORIES:
+            idx = num - 1
+            letter = self._ENTITY_LETTERS[idx] if idx < len(self._ENTITY_LETTERS) else f"Entity{num}"
+            suffix_match = self._CORPORATE_SUFFIX_RE.search(original)
+            if suffix_match:
+                suffix = suffix_match.group(1).strip()
+                return f"{letter} {suffix}"
+            # Fallback: just the letter
+            return letter
+
+        # --- Person names: "Person N" with optional title ---
+        if category == "INDIVIDUAL":
+            title_match = self._TITLE_PREFIXES.match(original)
+            if title_match:
+                title = title_match.group(1)
+                # Normalize: ensure title ends with period
+                if not title.endswith("."):
+                    title = title + "."
+                # Capitalize properly
+                title = title.capitalize()
+                return f"{title} Person {num}"
+            return f"Person {num}"
+
+        # --- All other categories: [Category N] ---
+        display = self._CATEGORY_DISPLAY_NAMES.get(category, category.replace("_", " ").title())
+        return f"[{display} {num}]"
 
     def placeholder(self, category: str, original: str, context: str = "") -> str:
         key = original.strip().lower()
         if not key:
             return original
 
-        if category not in self._registry:
-            self._registry[category] = {}
+        # Entity categories share a single letter-based counter.
+        if category in self._ENTITY_CATEGORIES:
+            if key not in self._entity_key_map:
+                self._entity_counter += 1
+                self._entity_key_map[key] = self._entity_counter
+            num = self._entity_key_map[key]
+        else:
+            if category not in self._registry:
+                self._registry[category] = {}
+            reg = self._registry[category]
+            if key not in reg:
+                reg[key] = len(reg) + 1
+            num = reg[key]
 
-        reg = self._registry[category]
-        if key not in reg:
-            reg[key] = len(reg) + 1
-
-        num = reg[key]
         self.stats[category] = self.stats.get(category, 0) + 1
-        ph = f"[REDACTED_{category}{num}]"
+        ph = self._format_placeholder(category, original, num)
         self.audit_log.append({
             "category": category,
             "placeholder": ph,
@@ -505,16 +590,6 @@ def _label_type_for_category(category: str) -> str:
     return "Individual"
 
 
-def _is_inside_placeholder(text: str, pos: int) -> bool:
-    """Check if a position is inside an existing [REDACTED_...] tag."""
-    before = text[:pos]
-    last_open = before.rfind("[REDACTED_")
-    if last_open < 0:
-        return False
-    last_close = before.rfind("]", last_open)
-    return last_close < last_open  # Open bracket found with no matching close
-
-
 def _looks_like_non_address_legal_clause(candidate: str) -> bool:
     lowered = candidate.lower()
     legal_hits = sum(1 for term in _ADDRESS_LEGAL_CLAUSE_TERMS if term in lowered)
@@ -605,7 +680,7 @@ def _redact_address_fallback_candidates(text: str, tracker: PIITracker, ctx: str
             end = line_starts[j]
             snippet = text[start:end]
             trimmed = snippet.strip()
-            if len(trimmed) < 12 or "[REDACTED_" in snippet:
+            if len(trimmed) < 12 or _contains_placeholder(snippet):
                 continue
             left_trim = len(snippet) - len(snippet.lstrip())
             right_trim = len(snippet) - len(snippet.rstrip())
@@ -637,7 +712,7 @@ def _redact_address_fallback_candidates(text: str, tracker: PIITracker, ctx: str
     out = text
     for start, end in reversed(selected):
         original = out[start:end]
-        if "[REDACTED_" in original:
+        if _contains_placeholder(original):
             continue
         out = out[:start] + tracker.placeholder("ADDRESS", original, ctx) + out[end:]
     return out
@@ -647,7 +722,7 @@ def _redact_addresses(text: str, tracker: PIITracker, ctx: str) -> str:
     """Pass 1: Detect and redact full address blocks (number → PIN → India)."""
     def _road_only_repl(m):
         road = m.group("road")
-        if "[REDACTED_" in road or _is_inside_placeholder(text, m.start("road")):
+        if _contains_placeholder(road) or _is_inside_placeholder(text, m.start("road")):
             return m.group()
         return f"{m.group('prefix')}{tracker.placeholder('ADDRESS', road, ctx)}"
 
@@ -660,7 +735,7 @@ def _redact_addresses(text: str, tracker: PIITracker, ctx: str) -> str:
         GENERAL_ADDRESS_PATTERN,
     ]:
         def _repl(m):
-            if "[REDACTED_" in m.group():
+            if _contains_placeholder(m.group()):
                 return m.group()
             return tracker.placeholder("ADDRESS", m.group(), ctx)
         text = pattern.sub(_repl, text)
@@ -929,7 +1004,7 @@ def _run_final_qa(text: str, tracker: PIITracker, context: str) -> str:
         span = det["span"].strip()
         if (
             not span
-            or "[REDACTED_" in span
+            or _contains_placeholder(span)
             or is_placeholder_internal_text(span)
             or _is_inside_placeholder(text, det["start"])
         ):

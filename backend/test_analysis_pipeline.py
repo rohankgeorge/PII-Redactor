@@ -10,7 +10,7 @@ import server
 
 def _fake_process_document(_content: bytes):
     doc = DocxDocument()
-    doc.add_paragraph("[REDACTED_INDIVIDUAL1]")
+    doc.add_paragraph("Person 1")
     out = BytesIO()
     doc.save(out)
     return (
@@ -20,7 +20,7 @@ def _fake_process_document(_content: bytes):
         [
             {
                 "category": "INDIVIDUAL",
-                "placeholder": "[REDACTED_INDIVIDUAL1]",
+                "placeholder": "Person 1",
                 "location": "Paragraph 1",
                 "original_text": "Alice",
             }
@@ -229,7 +229,7 @@ def test_redact_endpoint_remains_compatible(monkeypatch):
 
 def _fake_process_document_with_location(_content: bytes):
     doc = DocxDocument()
-    doc.add_paragraph("[REDACTED_LOCATION1] [REDACTED_INDIVIDUAL1]")
+    doc.add_paragraph("[Location 1] Person 1")
     out = BytesIO()
     doc.save(out)
     return (
@@ -239,13 +239,13 @@ def _fake_process_document_with_location(_content: bytes):
         [
             {
                 "category": "LOCATION",
-                "placeholder": "[REDACTED_LOCATION1]",
+                "placeholder": "[Location 1]",
                 "location": "Paragraph 1",
                 "original_text": "India",
             },
             {
                 "category": "INDIVIDUAL",
-                "placeholder": "[REDACTED_INDIVIDUAL1]",
+                "placeholder": "Person 1",
                 "location": "Paragraph 1",
                 "original_text": "Alice",
             },
@@ -256,7 +256,7 @@ def _fake_process_document_with_location(_content: bytes):
 
 def _fake_process_document_with_city_and_country(_content: bytes):
     doc = DocxDocument()
-    doc.add_paragraph("[REDACTED_LOCATION1] [REDACTED_LOCATION2] [REDACTED_INDIVIDUAL1]")
+    doc.add_paragraph("[Location 1] [Location 2] Person 1")
     out = BytesIO()
     doc.save(out)
     return (
@@ -266,19 +266,19 @@ def _fake_process_document_with_city_and_country(_content: bytes):
         [
             {
                 "category": "LOCATION",
-                "placeholder": "[REDACTED_LOCATION1]",
+                "placeholder": "[Location 1]",
                 "location": "Paragraph 1",
                 "original_text": "India",
             },
             {
                 "category": "LOCATION",
-                "placeholder": "[REDACTED_LOCATION2]",
+                "placeholder": "[Location 2]",
                 "location": "Paragraph 1",
                 "original_text": "Mumbai",
             },
             {
                 "category": "INDIVIDUAL",
-                "placeholder": "[REDACTED_INDIVIDUAL1]",
+                "placeholder": "Person 1",
                 "location": "Paragraph 1",
                 "original_text": "Alice",
             },
