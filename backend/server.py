@@ -896,9 +896,12 @@ if _FRONTEND_BUILD_DIR.is_dir():
 
 @app.on_event("startup")
 async def startup_nlp_models():
-    rule_library.initialize(DATA_DIR)
+    try:
+        rule_library.initialize(DATA_DIR)
+    except Exception:
+        logger.exception("rule_library.initialize() failed — rules may be unavailable")
     import asyncio
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         await loop.run_in_executor(None, nlp_engine.initialize_models)
         logger.info("NLP models loaded successfully")

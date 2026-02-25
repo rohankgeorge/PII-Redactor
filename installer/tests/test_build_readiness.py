@@ -170,6 +170,82 @@ class TestPreflight:
             "name_data/__init__.py must exist for PyInstaller to treat it as a package"
         )
 
+    # ── Emergent.sh cleanup guards ──────────────────────────
+
+    def test_index_html_no_emergent_scripts(self):
+        """index.html must not load any emergent.sh external scripts."""
+        index_html = FRONTEND / "public" / "index.html"
+        assert index_html.is_file(), "frontend/public/index.html not found"
+        text = index_html.read_text(encoding="utf-8")
+        assert "emergent.sh" not in text, (
+            "index.html still references emergent.sh — "
+            "remove the blocking script tag and debug-monitor injection"
+        )
+
+    def test_index_html_no_posthog(self):
+        """index.html must not contain PostHog analytics."""
+        index_html = FRONTEND / "public" / "index.html"
+        text = index_html.read_text(encoding="utf-8")
+        assert "posthog" not in text.lower(), (
+            "index.html still contains PostHog analytics SDK — "
+            "remove the tracking script and init call"
+        )
+
+    def test_index_html_no_emergent_badge(self):
+        """index.html must not contain the 'Made with Emergent' badge."""
+        index_html = FRONTEND / "public" / "index.html"
+        text = index_html.read_text(encoding="utf-8")
+        assert "emergent-badge" not in text, (
+            "index.html still contains the emergent-badge element"
+        )
+        assert "Made with Emergent" not in text, (
+            "index.html still contains 'Made with Emergent' text"
+        )
+
+    def test_index_html_meta_description_not_emergent(self):
+        """Meta description must not attribute the app to emergent.sh."""
+        index_html = FRONTEND / "public" / "index.html"
+        text = index_html.read_text(encoding="utf-8")
+        assert "product of emergent" not in text.lower(), (
+            'meta description still says "A product of emergent.sh"'
+        )
+
+    def test_no_visual_edits_plugin_directory(self):
+        """The visual-edits plugin directory must not exist."""
+        visual_edits = FRONTEND / "plugins" / "visual-edits"
+        assert not visual_edits.exists(), (
+            "frontend/plugins/visual-edits/ still exists — "
+            "remove the Emergent dev tooling directory"
+        )
+
+    def test_craco_no_visual_edits_reference(self):
+        """craco.config.js must not reference the visual-edits plugin."""
+        craco = FRONTEND / "craco.config.js"
+        if not craco.is_file():
+            return
+        text = craco.read_text(encoding="utf-8")
+        assert "visual-edits" not in text, (
+            "craco.config.js still references visual-edits plugin"
+        )
+
+    def test_no_emergent_config_directory(self):
+        """The .emergent/ directory must not exist."""
+        emergent_dir = ROOT / ".emergent"
+        assert not emergent_dir.exists(), (
+            ".emergent/ directory still exists — "
+            "remove the Emergent platform config"
+        )
+
+    def test_no_emergent_gitconfig(self):
+        """The .gitconfig with Emergent agent credentials must not exist."""
+        gitconfig = ROOT / ".gitconfig"
+        if not gitconfig.is_file():
+            return
+        text = gitconfig.read_text(encoding="utf-8")
+        assert "emergent" not in text.lower(), (
+            ".gitconfig still contains Emergent agent credentials"
+        )
+
     def test_no_package_manager_field_in_frontend(self):
         pkg_path = FRONTEND / "package.json"
         pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
