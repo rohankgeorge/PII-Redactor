@@ -6,6 +6,8 @@ import csv
 import io
 import json
 import re
+import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Iterable
@@ -41,14 +43,70 @@ WHITESPACE_RE = re.compile(r"\s+")
 VALID_CHARS_RE = re.compile(r"^[A-Za-z .\-'`]+$")
 HAS_DIGIT_RE = re.compile(r"\d")
 
+# Retry configuration
+MAX_RETRIES = 3
+INITIAL_RETRY_DELAY = 1  # seconds
+MAX_RETRY_DELAY = 60  # seconds
+
 
 def fetch_text(url: str) -> str:
-    with urllib.request.urlopen(url, timeout=30) as response:
-        return response.read().decode("utf-8", "ignore")
+    """Fetch text from URL with retry logic for network failures and rate limits."""
+    last_error = None
+    
+    for attempt in range(MAX_RETRIES):
+        try:
+            with urllib.request.urlopen(url, timeout=30) as response:
+                return response.read().decode("utf-8", "ignore")
+        except urllib.error.HTTPError as e:
+            last_error = e
+            # Handle rate limiting (HTTP 429) and server errors (5xx)
+            if e.code == 429:
+                # Rate limited - use retry-after header if available
+                retry_after = e.headers.get("Retry-After")
+                if retry_after:
+                    try:
+                        delay = int(retry_after)
+                    except ValueError:
+                        delay = INITIAL_RETRY_DELAY * (2 ** attempt)
+                else:
+                    delay = INITIAL_RETRY_DELAY * (2 ** attempt)
+                delay = min(delay, MAX_RETRY_DELAY)
+                print(f"Rate limited (attempt {attempt + 1}/{MAX_RETRIES}). "
+                      f"Retrying in {delay}s...")
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(delay)
+            elif 500 <= e.code < 600:
+                # Server error - retry with exponential backoff
+                delay = min(INITIAL_RETRY_DELAY * (2 ** attempt), MAX_RETRY_DELAY)
+                print(f"Server error {e.code} (attempt {attempt + 1}/{MAX_RETRIES}). "
+                      f"Retrying in {delay}s...")
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(delay)
+            else:
+                # Client error (4xx) - don't retry
+                raise RuntimeError(f"HTTP error {e.code} fetching {url}: {e.reason}") from e
+        except urllib.error.URLError as e:
+            last_error = e
+            # Network error - retry with exponential backoff
+            delay = min(INITIAL_RETRY_DELAY * (2 ** attempt), MAX_RETRY_DELAY)
+            print(f"Network error (attempt {attempt + 1}/{MAX_RETRIES}): {e.reason}. "
+                  f"Retrying in {delay}s...")
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(delay)
+    
+    # All retries exhausted
+    raise RuntimeError(
+        f"Failed to fetch {url} after {MAX_RETRIES} attempts: {last_error}"
+    ) from last_error
 
 
 def fetch_json(url: str) -> dict:
-    return json.loads(fetch_text(url))
+    """Fetch and parse JSON from URL with error handling."""
+    try:
+        text = fetch_text(url)
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Invalid JSON response from {url}: {e}") from e
 
 
 def normalize_candidate(raw_value: str) -> str | None:
